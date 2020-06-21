@@ -4,19 +4,31 @@
 #include <time.h>
 
 constexpr auto EPSILON = 1e-5;
-
+// func add two vector parallel on cuda
 __global__ void vectorAdd(const float *vec_a, const float *vec_b, float *vec_c,
                           int numElements);
 void add_vec_on_host(float *vec_a, float *vec_b, float *vec_c, size_t numElements);
+/* wrap logic add two vector on GPU
+**-step 1 alocate vector on device 
+**-step 2 copy vector from host to device
+**-step 3 call func parallel on cuda
+**-step 4 copy vector result from device to host
+*/
 int add_vec_on_device(float *vec_a, float *vec_b, float *vec_c,size_t numElements);
-
+/*
+**query info GPU device
+*/
 void query_device();
+/*
+**Verify that the result vector is correct
+*/
 bool chek_result(const float *vec_a, const float *vec_b, const float *vec_c,
                  size_t numElements);
 float *ramdom_init_vec(size_t vec_size);
 void argument_parser(int argc, char *argv[], size_t &vec_size, bool &isGPU);
 
 int main(int argc, char *argv[]) {
+  query_device();
   printf("execute program: %s, calculator add two vector\n", argv[0]);
   size_t vec_size = 0;
   bool execute_on_gpu;
@@ -32,7 +44,10 @@ int main(int argc, char *argv[]) {
     err = add_vec_on_device(h_a, h_b, h_c, vec_size);
     if (is_failed(err)) printf("Failed to add vector on device\n");
   } else {
+    clock_t tStart = clock();
     add_vec_on_host(h_a, h_b, h_c, vec_size);
+    printf("Add vector size %d on CPU Time taken: %.4fs\n", vec_size,
+           (double)(clock() - tStart) / CLOCKS_PER_SEC);
   }
   if (is_success(err)) {
     if (chek_result(h_a, h_b, h_c, vec_size)) printf("Test PASSED\n");
@@ -100,10 +115,9 @@ int add_vec_on_device(float *vec_a, float *vec_b, float *vec_c,
     _free_device(d_a, d_b, d_c);
     return -2;
   }
-  int threadsPerBlock = 256;
+  int threadsPerBlock = 512;  // 256;
   int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
   printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
-  //time_t start = time(0);
   clock_t tStart = clock();
   vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_a, d_b, d_c, numElements);
   cudaStatus = cudaGetLastError();
@@ -121,8 +135,8 @@ int add_vec_on_device(float *vec_a, float *vec_b, float *vec_c,
     _free_device(d_a, d_b, d_c);
     return -4;
   }
-  //printf("seconds: %f\n", difftime(time(0), start));
-  printf("Time taken: %.2fs\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
+  printf("Add vector size %d on GPU Time taken: %.4fs\n",
+         numElements, (double)(clock() - tStart) / CLOCKS_PER_SEC);
   // Copy output vector from GPU buffer to host memory.
   err = safe_copy_device<float>(vec_c, d_c, numElements * sizeof(float), cudaMemcpyDeviceToHost);
   if (is_failed(err)) {
