@@ -85,10 +85,7 @@ int main(int argc, char *argv[]) {
           dim3 blockSize(prop.maxThreadsPerBlock / nx_thread, nx_thread);
           dim3 gridSize((cmd.dim_a.y - 1) / blockSize.x + 1,
                         (cmd.dim_b.y - 1) / blockSize.y + 1);
-          printf("blockSize[%d][%d][%d]\n", blockSize.x, blockSize.y, blockSize.z);
-          printf("gridSize[%d][%d][%d]\n", gridSize.x, gridSize.y, gridSize.z);
           start = clock();
-          // blocksPerGrid, threadsPerBlock;
           device_matrix_multiplication<<<gridSize, blockSize>>>(
               d_a, d_b, d_c, cmd.dim_a.y, cmd.dim_a.x, cmd.dim_b.y);
           cudaError_t cudaStatus = cudaGetLastError();
