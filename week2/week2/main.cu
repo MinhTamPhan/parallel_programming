@@ -248,9 +248,10 @@ int _init_matrix_device(float *&device_matrix, float *host_matrix,
 
 __global__ void device_matrix_multiplication(float *d_a, float *d_b, float *d_c,
                                              size_t ma, size_t na, size_t mb) {
- /* printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d\n", blockDim.x,
-         blockIdx.x, threadIdx.x);*/
-  // printf("device_matrix_multiplication %d\n", ma *  na * mb);
+  /* printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d\n", blockDim.x,
+          blockIdx.x, threadIdx.x);*/
+  //printf("device_matrix_multiplication %d\n", ma * na * mb);
+  printf("device_matrix_multiplication %d\n", na);
 }
 
 void _free_device(float *d_a, float *d_b, float *d_c) {
