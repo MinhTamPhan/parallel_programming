@@ -81,8 +81,10 @@ int main(int argc, char *argv[]) {
         memset((void *)h_c, 0, size);
         err = _init_matrix_device(d_c, h_c, cmd.dim_b);
         if (is_success(err)) {
-          dim3 blockSize(prop.maxThreadsDim[0], prop.maxThreadsDim[1], 1);
+          dim3 blockSize(prop.maxThreadsDim[0]);
           dim3 gridSize((size - 1) / blockSize.x + 1);
+          printf("blockSize[%d][%d][%d]\n", blockSize.x, blockSize.y, blockSize.z);
+          printf("gridSize[%d][%d][%d]\n", gridSize.x, gridSize.y, gridSize.z);
           start = clock();
           // blocksPerGrid, threadsPerBlock;
           device_matrix_multiplication<<<gridSize, blockSize>>>(
@@ -249,7 +251,7 @@ int _init_matrix_device(float *&device_matrix, float *host_matrix,
 
 __global__ void device_matrix_multiplication(float *d_a, float *d_b, float *d_c,
                                              size_t ma, size_t na, size_t mb) {
-  printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d", blockDim.x,
+  printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d\n", blockDim.x,
          blockIdx.x, threadIdx.x);
   // printf("device_matrix_multiplication %d\n", ma *  na * mb);
 }
