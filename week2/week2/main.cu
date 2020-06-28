@@ -1,13 +1,14 @@
 #include <math.h>
 #include <string.h>
 #include <time.h>
+#include <stdint.h>
 
 #include "helper.cuh"
 
-#define time_diff(start, end) (start - end)
+inline unsigned long time_diff(long start, long end) { return end - start; }
 
 typedef struct MatrixDim {
-  int x, y;
+  unsigned int x, y;
 };
 
 typedef struct Argument {
@@ -21,42 +22,56 @@ typedef struct Argument {
 **query info GPU device
 */
 void query_device();
+//__global__ 
 void host_matrix_multiplication(float *A, float *B, float *&result,
                                 MatrixDim dim_A, MatrixDim dim_B);
 void host_matrix_multiplication_version2(float *A, float *B, float *&result,
                                          MatrixDim dim_A, MatrixDim dim_B);
-float *ramdom_init_vec(int vec_size);
+float *ramdom_init_matrix(MatrixDim dim);
 
 void argument_parser(int argc, char *argv[], Argument &cmd);
+void print_matrix(float *A, const MatrixDim &dim);
 
 //inline long time_diff(clock_t start, clock_t end) { return start - end; }
 
 int main(int argc, char *argv[]) {
+  srand(100);
   Argument cmd;
   clock_t start = clock();
   query_device();
   //printf("execute time = %d\n", time_diff(clock(), start));
   argument_parser(argc, argv, cmd);
-  //float *a, *b, *c;  // host variable start prefix h_
-  //size_t vec_size = 10;
-  //a = ramdom_init_vec(vec_size);
-  //b = ramdom_init_vec(vec_size);
-  //long execute_time = 0;
-  //if (!cmd.exec_gpu) {
-  //  if (cmd.cpu_version1) {
-  //    clock_t start = clock();
-  //    host_matrix_multiplication(a, b, c, cmd.dim_A, cmd.dim_b);
-  //    execute_time = time_diff(start, clock()); 
-  //  } else {
-  //    clock_t start = clock();
-  //    host_matrix_multiplication_version2(a, b, c, cmd.dim_A, cmd.dim_b);
-  //    execute_time = time_diff(start, clock());
-  //  }
-  //} else {
-  //  clock_t start = clock();
-  //  host_matrix_multiplication_version2(a, b, c, cmd.dim_A, cmd.dim_b);
-  //  execute_time = time_diff(start, clock());
-  //}
+  float *h_a, *h_b, *h_c; // host variable start prefix h_
+  h_a = ramdom_init_matrix(cmd.dim_a);
+  h_b = ramdom_init_matrix(cmd.dim_b);
+  //printf("Matrix multiplication\nMatrix A:\n");
+  //print_matrix(h_a, cmd.dim_a);
+  //printf("Matrix B:\n");
+  //print_matrix(h_b, cmd.dim_b);
+  long execute_time = 0;
+  if (!cmd.exec_gpu) {
+    if (cmd.cpu_version1) {
+      clock_t start = clock();
+      host_matrix_multiplication(h_a, h_b, h_c, cmd.dim_a, cmd.dim_b);
+      execute_time = time_diff(start, clock()); 
+    } else {
+      clock_t start = clock();
+      host_matrix_multiplication_version2(h_a, h_b, h_c, cmd.dim_a, cmd.dim_b);
+      execute_time = time_diff(start, clock());
+    }
+    printf("Matrix multiplication execute time : %ld minisecond \n", execute_time);
+    //printf("Matrix result:\n");
+    MatrixDim dim_c;
+    dim_c.x = cmd.dim_a.y;
+    dim_c.y = cmd.dim_b.x;
+    print_matrix(h_c, dim_c);
+  } else {
+    /*clock_t start = clock();
+    host_matrix_multiplication_version2(a, b, c, cmd.dim_A, cmd.dim_b);
+    execute_time = time_diff(start, clock());*/
+  }
+
+  safe_free_host_ptr<float*>(3, h_a, h_b, h_c);
   return 0;
 }
 
@@ -89,7 +104,9 @@ void query_device() {
 
 void host_matrix_multiplication(float *A, float *B, float *&result,
                                 MatrixDim dim_A, MatrixDim dim_B) {
-  result = (float *)safe_malloc_host(sizeof(float) * dim_A.y * dim_B.y);
+  size_t size = sizeof(float) * dim_A.y * dim_B.y;
+  result = (float *)safe_malloc_host(size);
+  memset((void *)result, 0, size); 
   for (size_t i = 0; i < dim_A.y; i++)
     for (size_t j = 0; j < dim_B.x; j++)
       for (size_t k = 0; k < dim_A.x; k++)
@@ -98,17 +115,19 @@ void host_matrix_multiplication(float *A, float *B, float *&result,
 
 void host_matrix_multiplication_version2(float *A, float *B, float *&result,
                                          MatrixDim dim_A, MatrixDim dim_B) {
-  result = (float *)safe_malloc_host(sizeof(float) * dim_A.y * dim_B.y);
+  size_t size = sizeof(float) * dim_A.y * dim_B.y;
+  result = (float *)safe_malloc_host(size);
+  memset((void *)result, 0, size); 
   for (size_t i = 0; i < dim_A.y; i++)
     for (size_t k = 0; k < dim_A.x; k++)
       for (size_t j = 0; j < dim_B.x; j++)
         result[i * dim_A.y + j] += A[i * dim_A.x + k] * B[k * dim_B.x + j];
 }
 
-float *ramdom_init_vec(int vec_size) {
-  float *vec = (float *)safe_malloc_host(vec_size * sizeof(float));
-  for (int i = 0; i < vec_size; ++i) vec[i] = rand() / (float)RAND_MAX;
-  return vec;
+float *ramdom_init_matrix(MatrixDim dim) {
+  float *res = (float *)safe_malloc_host(size_t(dim.x) * size_t(dim.y) * sizeof(float));
+  for (int i = 0; i < dim.x * dim.y; ++i) res[i] = rand() / (float)RAND_MAX;
+  return res;
 }
 
 void argument_parser(int argc, char *argv[], Argument &cmd) {
@@ -119,6 +138,7 @@ void argument_parser(int argc, char *argv[], Argument &cmd) {
     exit(EXIT_FAILURE);
   } else {
     size_t i = 0;
+    cmd.cpu_version1 = true;
     while (i < argc) {
       if (strcmp(argv[i], "-cpu") == 0)
         cmd.exec_gpu = false;
@@ -136,11 +156,28 @@ void argument_parser(int argc, char *argv[], Argument &cmd) {
       } else if (strcmp(argv[i], "-nb") == 0) {
         i++;
         cmd.dim_b.x = atoi(argv[i]);
+      } else if (strcmp(argv[i], "-v2") == 0) {
+        cmd.cpu_version1 = false;
       }
       i++;
     }
   }
-  printf("execute program with %s\n", cmd.exec_gpu ? "gpu": "cpu");
-  printf("matrix A %d rows, %d column %d\n", cmd.dim_a.y, cmd.dim_a.x);
-  printf("matrix B %d rows, %d column %d\n\n", cmd.dim_b.y, cmd.dim_b.x);
+  printf("execute program with %s\n", cmd.exec_gpu ? "gpu" : "cpu");
+  if (!cmd.exec_gpu)
+    printf("execute cpu version %d\n", cmd.cpu_version1 ? 1 : 2);
+  else
+    printf("execute gpu\n");
+  printf("matrix A %d rows, %d column\n", cmd.dim_a.y, cmd.dim_a.x);
+  printf("matrix A %d rows, %d column\n\n", cmd.dim_a.y, cmd.dim_a.x);
+  
+}
+
+void print_matrix(float *A, const MatrixDim &dim) {
+  for (size_t i = 0; i < dim.y; i++) {
+    for (size_t j = 0; j < dim.x; j++) {
+      printf("%6.2f    ", A[i * dim.x + j]);
+    }
+    printf("\n");
+  }
+  printf("\n\n");
 }
