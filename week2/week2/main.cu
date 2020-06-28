@@ -1,7 +1,7 @@
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 #include <time.h>
-#include <stdint.h>
 
 #include "helper.cuh"
 
@@ -22,56 +22,76 @@ typedef struct Argument {
 **query info GPU device
 */
 void query_device();
-//__global__ 
+int _init_matrix_device(float *&device_matrix, float *host_matrix,
+                    const MatrixDim &dim);
+
 void host_matrix_multiplication(float *A, float *B, float *&result,
-                                MatrixDim dim_A, MatrixDim dim_B);
+                                const MatrixDim &dim_A, const MatrixDim &dim_B);
 void host_matrix_multiplication_version2(float *A, float *B, float *&result,
-                                         MatrixDim dim_A, MatrixDim dim_B);
-float *ramdom_init_matrix(MatrixDim dim);
+                                         const MatrixDim &dim_A,
+                                         const MatrixDim &dim_B);
+float *ramdom_init_matrix(const MatrixDim &dim);
 
 void argument_parser(int argc, char *argv[], Argument &cmd);
 void print_matrix(float *A, const MatrixDim &dim);
 
-//inline long time_diff(clock_t start, clock_t end) { return start - end; }
+// inline long time_diff(clock_t start, clock_t end) { return start - end; }
 
 int main(int argc, char *argv[]) {
   srand(100);
   Argument cmd;
   clock_t start = clock();
   query_device();
-  //printf("execute time = %d\n", time_diff(clock(), start));
+  // printf("execute time = %d\n", time_diff(clock(), start));
   argument_parser(argc, argv, cmd);
-  float *h_a, *h_b, *h_c; // host variable start prefix h_
+  float *h_a, *h_b, *h_c;  // host variable start prefix h_
+  float *d_a, *d_b, *d_c;  // host variable start prefix d_
   h_a = ramdom_init_matrix(cmd.dim_a);
   h_b = ramdom_init_matrix(cmd.dim_b);
-  //printf("Matrix multiplication\nMatrix A:\n");
-  //print_matrix(h_a, cmd.dim_a);
-  //printf("Matrix B:\n");
-  //print_matrix(h_b, cmd.dim_b);
+  MatrixDim dim_c;
+  clock_t start;
+  dim_c.x = cmd.dim_a.y;
+  dim_c.y = cmd.dim_b.x;
+  // printf("Matrix multiplication\nMatrix A:\n");
+  // print_matrix(h_a, cmd.dim_a);
+  // printf("Matrix B:\n");
+  // print_matrix(h_b, cmd.dim_b);
   long execute_time = 0;
   if (!cmd.exec_gpu) {
     if (cmd.cpu_version1) {
-      clock_t start = clock();
+      start = clock();
       host_matrix_multiplication(h_a, h_b, h_c, cmd.dim_a, cmd.dim_b);
-      execute_time = time_diff(start, clock()); 
     } else {
-      clock_t start = clock();
+      start = clock();
       host_matrix_multiplication_version2(h_a, h_b, h_c, cmd.dim_a, cmd.dim_b);
-      execute_time = time_diff(start, clock());
     }
-    printf("Matrix multiplication execute time : %ld minisecond \n", execute_time);
-    //printf("Matrix result:\n");
-    MatrixDim dim_c;
-    dim_c.x = cmd.dim_a.y;
-    dim_c.y = cmd.dim_b.x;
-    print_matrix(h_c, dim_c);
+    execute_time = time_diff(start, clock());
+    // printf("Matrix result:\n");
+    // print_matrix(h_c, dim_c);
   } else {
-    /*clock_t start = clock();
-    host_matrix_multiplication_version2(a, b, c, cmd.dim_A, cmd.dim_b);
-    execute_time = time_diff(start, clock());*/
-  }
+    int err = _init_matrix_device(d_a, h_a, cmd.dim_a);
+    if (is_success(err)) {
+      err = _init_matrix_device(d_b, h_b, cmd.dim_b);
+      if (is_success(err)) {
+        size_t size = sizeof(float) * cmd.dim_a.y * cmd.dim_a.y;
+        h_c = (float *)safe_malloc_host(size);
+        memset((void *)h_c, 0, size);
+        err = _init_matrix_device(d_c, h_c, cmd.dim_b);
+        if (is_success(err)) {
 
-  safe_free_host_ptr<float*>(3, h_a, h_b, h_c);
+        } else
+          printf("Failed to matrix multiplication by host");
+      } else
+        printf("Failed to matrix multiplication by host");
+    } else
+        printf("Failed to matrix multiplication by host");
+    _free_device(d_a, d_b, d_c);
+  }
+  safe_free_host_ptr<float *>(3, h_a, h_b, h_c);
+  printf(
+      "Matrix multiplication execute time : %ld minisecond (%d second - %d "
+      "minute) \n",
+      execute_time, (execute_time / 1000), (execute_time / 1000 / 60));
   return 0;
 }
 
@@ -103,10 +123,11 @@ void query_device() {
 }
 
 void host_matrix_multiplication(float *A, float *B, float *&result,
-                                MatrixDim dim_A, MatrixDim dim_B) {
+                                const MatrixDim &dim_A,
+                                const MatrixDim &dim_B) {
   size_t size = sizeof(float) * dim_A.y * dim_B.y;
   result = (float *)safe_malloc_host(size);
-  memset((void *)result, 0, size); 
+  memset((void *)result, 0, size);
   for (size_t i = 0; i < dim_A.y; i++)
     for (size_t j = 0; j < dim_B.x; j++)
       for (size_t k = 0; k < dim_A.x; k++)
@@ -114,24 +135,26 @@ void host_matrix_multiplication(float *A, float *B, float *&result,
 }
 
 void host_matrix_multiplication_version2(float *A, float *B, float *&result,
-                                         MatrixDim dim_A, MatrixDim dim_B) {
+                                         const MatrixDim &dim_A,
+                                         const MatrixDim &dim_B) {
   size_t size = sizeof(float) * dim_A.y * dim_B.y;
   result = (float *)safe_malloc_host(size);
-  memset((void *)result, 0, size); 
+  memset((void *)result, 0, size);
   for (size_t i = 0; i < dim_A.y; i++)
     for (size_t k = 0; k < dim_A.x; k++)
       for (size_t j = 0; j < dim_B.x; j++)
         result[i * dim_A.y + j] += A[i * dim_A.x + k] * B[k * dim_B.x + j];
 }
 
-float *ramdom_init_matrix(MatrixDim dim) {
-  float *res = (float *)safe_malloc_host(size_t(dim.x) * size_t(dim.y) * sizeof(float));
+float *ramdom_init_matrix(const MatrixDim &dim) {
+  float *res =
+      (float *)safe_malloc_host(size_t(dim.x) * size_t(dim.y) * sizeof(float));
   for (int i = 0; i < dim.x * dim.y; ++i) res[i] = rand() / (float)RAND_MAX;
   return res;
 }
 
 void argument_parser(int argc, char *argv[], Argument &cmd) {
-    //-cpu -ma 5 -na 6 -mb 6 -nb 5
+  //-cpu -ma 5 -na 6 -mb 6 -nb 5
   if (argc < 9) {
     printf("usge: mulmatrix.exe -cpu[gpu] -ma 5 -na 6 -mb 6 -nb 5\n");
     printf("-n: is length vector > 0\n");
@@ -169,7 +192,6 @@ void argument_parser(int argc, char *argv[], Argument &cmd) {
     printf("execute gpu\n");
   printf("matrix A %d rows, %d column\n", cmd.dim_a.y, cmd.dim_a.x);
   printf("matrix A %d rows, %d column\n\n", cmd.dim_a.y, cmd.dim_a.x);
-  
 }
 
 void print_matrix(float *A, const MatrixDim &dim) {
@@ -180,4 +202,29 @@ void print_matrix(float *A, const MatrixDim &dim) {
     printf("\n");
   }
   printf("\n\n");
+}
+
+int _init_matrix_device(float *&device_matrix, float *host_matrix,
+                 const MatrixDim &dim) {
+  size_t size = (size_t)dim.x * (size_t)dim.y * sizeof(float);
+  int err = safe_malloc_device(device_matrix, size);
+  if (is_failed(err)) {
+    fprintf(stderr, "Failed to allocate device vector C (error code %d)!\n",
+            err);
+    return -1;
+  } else
+    err = safe_copy_device(device_matrix, host_matrix, size,
+                           cudaMemcpyKind::cudaMemcpyHostToDevice);
+  if (is_failed(err)) {
+    fprintf(stderr, "Failed to allocate device vector C (error code %d)!\n",
+            err);
+    return -1;
+  }
+  return 0;
+}
+
+void _free_device(float *d_a, float *d_b, float *d_c) {
+  safe_free_device(d_a);
+  safe_free_device(d_b);
+  safe_free_device(d_c);
 }

@@ -52,7 +52,7 @@ template <typename T>
 static int safe_copy_device(T* dest, T* src, size_t size,
                             cudaMemcpyKind cpy_kind,
                             void (*handle_exception)() = nullptr) {
-  cudaError_t err = cudaMemcpy(dest, src, size, cpy_kind);
+  cudaError_t err = cudaMemcpy(dest, src, size * sizeof(T), cpy_kind);
   if (err != cudaSuccess) {
     printf("cuda memcpy error: %s in %s at line %d!\n", cudaGetErrorString(err),
            __FILE__, __LINE__);
