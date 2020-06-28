@@ -44,6 +44,7 @@ int main(int argc, char *argv[]) {
   Argument cmd;
   cudaDeviceProp prop;
   query_device(prop);
+  int nx_thread = 32;
   // printf("execute time = %d\n", time_diff(clock(), start));
   argument_parser(argc, argv, cmd);
   float *h_a, *h_b, *h_c;  // host variable start prefix h_
@@ -76,13 +77,14 @@ int main(int argc, char *argv[]) {
     if (is_success(err)) {
       err = _init_matrix_device(d_b, h_b, cmd.dim_b);
       if (is_success(err)) {
-        size_t size = sizeof(float) * cmd.dim_a.y * cmd.dim_a.y;
+        size_t size = sizeof(float) * cmd.dim_a.y * cmd.dim_b.y;
         h_c = (float *)safe_malloc_host(size);
         memset((void *)h_c, 0, size);
         err = _init_matrix_device(d_c, h_c, cmd.dim_b);
         if (is_success(err)) {
-          dim3 blockSize(prop.maxThreadsDim[0]);
-          dim3 gridSize((size - 1) / blockSize.x + 1);
+          dim3 blockSize(prop.maxThreadsPerBlock / nx_thread, nx_thread);
+          dim3 gridSize((cmd.dim_a.y - 1) / blockSize.x + 1,
+                        (cmd.dim_b.y - 1) / blockSize.y + 1);
           printf("blockSize[%d][%d][%d]\n", blockSize.x, blockSize.y, blockSize.z);
           printf("gridSize[%d][%d][%d]\n", gridSize.x, gridSize.y, gridSize.z);
           start = clock();
@@ -251,8 +253,8 @@ int _init_matrix_device(float *&device_matrix, float *host_matrix,
 
 __global__ void device_matrix_multiplication(float *d_a, float *d_b, float *d_c,
                                              size_t ma, size_t na, size_t mb) {
-  printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d\n", blockDim.x,
-         blockIdx.x, threadIdx.x);
+ /* printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d\n", blockDim.x,
+         blockIdx.x, threadIdx.x);*/
   // printf("device_matrix_multiplication %d\n", ma *  na * mb);
 }
 
