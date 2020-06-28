@@ -21,10 +21,12 @@ typedef struct Argument {
 /*
 **query info GPU device
 */
-void query_device();
+void query_device(cudaDeviceProp &prop);
 int _init_matrix_device(float *&device_matrix, float *host_matrix,
-                    const MatrixDim &dim);
-
+                        const MatrixDim &dim);
+__global__ void device_matrix_multiplication(float *d_a, float *d_b, float *d_c,
+                                             size_t ma, size_t na, size_t mb);
+void _free_device(float *d_a, float *d_b, float *d_c);
 void host_matrix_multiplication(float *A, float *B, float *&result,
                                 const MatrixDim &dim_A, const MatrixDim &dim_B);
 void host_matrix_multiplication_version2(float *A, float *B, float *&result,
@@ -40,12 +42,13 @@ void print_matrix(float *A, const MatrixDim &dim);
 int main(int argc, char *argv[]) {
   srand(100);
   Argument cmd;
-  clock_t start = clock();
-  query_device();
+  cudaDeviceProp prop;
+  query_device(prop);
   // printf("execute time = %d\n", time_diff(clock(), start));
   argument_parser(argc, argv, cmd);
   float *h_a, *h_b, *h_c;  // host variable start prefix h_
-  float *d_a, *d_b, *d_c;  // host variable start prefix d_
+  float *d_a = nullptr, *d_b = nullptr,
+        *d_c = nullptr;  // host variable start prefix d_
   h_a = ramdom_init_matrix(cmd.dim_a);
   h_b = ramdom_init_matrix(cmd.dim_b);
   MatrixDim dim_c;
@@ -78,28 +81,49 @@ int main(int argc, char *argv[]) {
         memset((void *)h_c, 0, size);
         err = _init_matrix_device(d_c, h_c, cmd.dim_b);
         if (is_success(err)) {
-
+          dim3 blockSize(prop.maxThreadsDim[0], prop.maxThreadsDim[1], 1);
+          dim3 gridSize((size - 1) / blockSize.x + 1);
+          start = clock();
+          // blocksPerGrid, threadsPerBlock;
+          device_matrix_multiplication<<<gridSize, blockSize>>>(
+              d_a, d_b, d_c, cmd.dim_a.y, cmd.dim_a.x, cmd.dim_b.y);
+          cudaError_t cudaStatus = cudaGetLastError();
+          if (cudaStatus != cudaSuccess) {
+            fprintf(stderr,
+                    "Failed to launch matrix multiplication kernel (error code "
+                    "%s)!\n",
+                    cudaGetErrorString(cudaStatus));
+            _free_device(d_a, d_b, d_c);
+          }
+          cudaStatus = cudaDeviceSynchronize();
+          if (cudaStatus != cudaSuccess) {
+            fprintf(stderr,
+                    "Failed to launch matrix multiplication kernel (error code "
+                    "%s)!\n",
+                    cudaGetErrorString(cudaStatus));
+            _free_device(d_a, d_b, d_c);
+          }
+          execute_time = time_diff(start, clock());
         } else
           printf("Failed to matrix multiplication by host");
       } else
         printf("Failed to matrix multiplication by host");
     } else
-        printf("Failed to matrix multiplication by host");
+      printf("Failed to matrix multiplication by host");
     _free_device(d_a, d_b, d_c);
   }
   safe_free_host_ptr<float *>(3, h_a, h_b, h_c);
   printf(
       "Matrix multiplication execute time : %ld minisecond (%d second - %d "
       "minute) \n",
-      execute_time, (execute_time / 1000), (execute_time / 1000 / 60));
+      execute_time, (execute_time / 1000), (execute_time / 1000) / 60);
   return 0;
 }
 
-void query_device() {
+void query_device(cudaDeviceProp &prop) {
   int nDevices;
   cudaGetDeviceCount(&nDevices);
   for (int i = 0; i < nDevices; i++) {
-    cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, i);
     printf("Device Number: %d\n", i);
     printf("  Device name: %s\n", prop.name);
@@ -191,7 +215,7 @@ void argument_parser(int argc, char *argv[], Argument &cmd) {
   else
     printf("execute gpu\n");
   printf("matrix A %d rows, %d column\n", cmd.dim_a.y, cmd.dim_a.x);
-  printf("matrix A %d rows, %d column\n\n", cmd.dim_a.y, cmd.dim_a.x);
+  printf("matrix B %d rows, %d column\n\n", cmd.dim_b.y, cmd.dim_b.x);
 }
 
 void print_matrix(float *A, const MatrixDim &dim) {
@@ -205,7 +229,7 @@ void print_matrix(float *A, const MatrixDim &dim) {
 }
 
 int _init_matrix_device(float *&device_matrix, float *host_matrix,
-                 const MatrixDim &dim) {
+                        const MatrixDim &dim) {
   size_t size = (size_t)dim.x * (size_t)dim.y * sizeof(float);
   int err = safe_malloc_device(device_matrix, size);
   if (is_failed(err)) {
@@ -221,6 +245,13 @@ int _init_matrix_device(float *&device_matrix, float *host_matrix,
     return -1;
   }
   return 0;
+}
+
+__global__ void device_matrix_multiplication(float *d_a, float *d_b, float *d_c,
+                                             size_t ma, size_t na, size_t mb) {
+  printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d", blockDim.x,
+         blockIdx.x, threadIdx.x);
+  // printf("device_matrix_multiplication %d\n", ma *  na * mb);
 }
 
 void _free_device(float *d_a, float *d_b, float *d_c) {
