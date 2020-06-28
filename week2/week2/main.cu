@@ -37,8 +37,6 @@ float *ramdom_init_matrix(const MatrixDim &dim);
 void argument_parser(int argc, char *argv[], Argument &cmd);
 void print_matrix(float *A, const MatrixDim &dim);
 
-// inline long time_diff(clock_t start, clock_t end) { return start - end; }
-
 int main(int argc, char *argv[]) {
   srand(100);
   Argument cmd;
