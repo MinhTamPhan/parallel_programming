@@ -12,7 +12,7 @@ typedef struct MatrixDim {
 
 typedef struct Argument {
   bool exec_gpu;
-  MatrixDim dim_A;
+  MatrixDim dim_a;
   MatrixDim dim_b;
   bool cpu_version1;
 };
@@ -27,14 +27,16 @@ void host_matrix_multiplication_version2(float *A, float *B, float *&result,
                                          MatrixDim dim_A, MatrixDim dim_B);
 float *ramdom_init_vec(int vec_size);
 
+void argument_parser(int argc, char *argv[], Argument &cmd);
+
 //inline long time_diff(clock_t start, clock_t end) { return start - end; }
 
 int main(int argc, char *argv[]) {
   Argument cmd;
   clock_t start = clock();
   query_device();
-  printf("execute time = %d", time_diff(clock(), start));
-  //argument_parser(argc, argv, cmd);
+  //printf("execute time = %d\n", time_diff(clock(), start));
+  argument_parser(argc, argv, cmd);
   //float *a, *b, *c;  // host variable start prefix h_
   //size_t vec_size = 10;
   //a = ramdom_init_vec(vec_size);
@@ -110,16 +112,35 @@ float *ramdom_init_vec(int vec_size) {
 }
 
 void argument_parser(int argc, char *argv[], Argument &cmd) {
-  if (argc < 4) {
-    printf("usge: addVec.exe -n 200 -gpu[cpu]\n");
+    //-cpu -ma 5 -na 6 -mb 6 -nb 5
+  if (argc < 9) {
+    printf("usge: mulmatrix.exe -cpu[gpu] -ma 5 -na 6 -mb 6 -nb 5\n");
     printf("-n: is length vector > 0\n");
     exit(EXIT_FAILURE);
   } else {
-    long int size = atol(argv[2]);
-    if (size < 0) {
-      printf("usge: addVec.exe -n 200 -gpu[cpu]\n");
-      printf("-n: is length vector > 0\n");
-      exit(EXIT_FAILURE);
+    size_t i = 0;
+    while (i < argc) {
+      if (strcmp(argv[i], "-cpu") == 0)
+        cmd.exec_gpu = false;
+      else if (strcmp(argv[i], "-gpu") == 0)
+        cmd.exec_gpu = true;
+      else if (strcmp(argv[i], "-ma") == 0) {
+        i++;
+        cmd.dim_a.y = atoi(argv[i]);
+      } else if (strcmp(argv[i], "-na") == 0) {
+        i++;
+        cmd.dim_a.x = atoi(argv[i]);
+      } else if (strcmp(argv[i], "-mb") == 0) {
+        i++;
+        cmd.dim_b.y = atoi(argv[i]);
+      } else if (strcmp(argv[i], "-nb") == 0) {
+        i++;
+        cmd.dim_b.x = atoi(argv[i]);
+      }
+      i++;
     }
   }
+  printf("execute program with %s\n", cmd.exec_gpu ? "gpu": "cpu");
+  printf("matrix A %d rows, %d column %d\n", cmd.dim_a.y, cmd.dim_a.x);
+  printf("matrix B %d rows, %d column %d\n\n", cmd.dim_b.y, cmd.dim_b.x);
 }
