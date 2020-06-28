@@ -102,7 +102,13 @@ int main(int argc, char *argv[]) {
                     cudaGetErrorString(cudaStatus));
             _free_device(d_a, d_b, d_c);
           }
+          float *res =
+              (float *)safe_malloc_host(sizeof(float) * dim_c.x * dim_c.y);
+          err = safe_copy_device(res, d_c, sizeof(float) * dim_c.x * dim_c.y,
+                                 cudaMemcpyDeviceToHost);
           execute_time = time_diff(start, clock());
+          printf("matrix result \n");
+          print_matrix(res, dim_c);
         } else
           printf("Failed to matrix multiplication by host");
       } else
@@ -250,8 +256,16 @@ __global__ void device_matrix_multiplication(float *d_a, float *d_b, float *d_c,
                                              size_t ma, size_t na, size_t mb) {
   /* printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d\n", blockDim.x,
           blockIdx.x, threadIdx.x);*/
-  //printf("device_matrix_multiplication %d\n", ma * na * mb);
-  printf("device_matrix_multiplication %d\n", na);
+  // printf("device_matrix_multiplication %d\n", ma * na * mb);
+  int ix = threadIdx.x + blockIdx.x * blockDim.x;
+  int iy = threadIdx.y + blockIdx.y * blockDim.y;
+  if (ix < ma && iy < mb) {
+    for (size_t j = 0; j < na; j++) {
+      // A[i * dim_A.x + k] * B[k * dim_B.x + j]
+      d_c[iy * ma + ix] += d_a[ix * na + j] * d_b[j * na + iy];
+    }
+  }
+  // printf("device_matrix_multiplication %d\n", na);
 }
 
 void _free_device(float *d_a, float *d_b, float *d_c) {
