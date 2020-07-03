@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
           err = safe_copy_device(res, d_c, dim_c.x * dim_c.y,
                                  cudaMemcpyDeviceToHost);
           execute_time = time_diff(start, clock());
-          //printf("matrix result \n");
+          printf("matrix result \n");
           //print_matrix(res, dim_c);
         } else
           printf("Failed to matrix multiplication by host");
@@ -119,9 +119,9 @@ int main(int argc, char *argv[]) {
   }
   safe_free_host_ptr<float *>(3, h_a, h_b, h_c);
   printf(
-      "Matrix multiplication execute time : %ld minisecond (%d second - %d "
+      "Matrix multiplication execute time : %ld minisecond (%f second - %f "
       "minute) \n",
-      execute_time, (execute_time / 1000), (execute_time / 1000) / 60);
+      execute_time, (execute_time / 1000.0), (execute_time / 1000.0) / 60);
   return 0;
 }
 
@@ -235,7 +235,7 @@ void print_matrix(float *A, const MatrixDim &dim) {
 
 int _init_matrix_device(float *&device_matrix, float *host_matrix,
                         const MatrixDim &dim) {
-  size_t size = (size_t)dim.x * (size_t)dim.y * sizeof(float);
+  size_t size = (size_t)dim.x * (size_t)dim.y;
   int err = safe_malloc_device(device_matrix, size);
   if (is_failed(err)) {
     fprintf(stderr, "Failed to allocate device vector C (error code %d)!\n",
@@ -254,15 +254,10 @@ int _init_matrix_device(float *&device_matrix, float *host_matrix,
 
 __global__ void device_matrix_multiplication(float *d_a, float *d_b, float *d_c,
                                              size_t ma, size_t na, size_t mb) {
-  /* printf(" blockDim.x %d, blockIdx.x %d, threadIdx.x %d\n", blockDim.x,
-          blockIdx.x, threadIdx.x);*/
-  // printf("device_matrix_multiplication %d\n", ma * na * mb);
   int ix = threadIdx.x + blockIdx.x * blockDim.x;
   int iy = threadIdx.y + blockIdx.y * blockDim.y;
   if (ix < ma && iy < mb) {
     for (size_t j = 0; j < mb; j++) {
-      // printf("device_matrix_multiplication dc=%d \t da=%d \t db=%d\n",ma, na,
-      // mb);
       d_c[iy * ma + ix] += d_a[iy * na + j] * d_b[j * ma + ix];
     }
   }
