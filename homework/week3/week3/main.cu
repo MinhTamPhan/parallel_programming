@@ -13,18 +13,28 @@ typedef struct Argument {
   size_t vec_size;
   bool version1;
 };
+void argument_parser(int argc, char *argv[], Argument &cmd);
 
 void add_vec_on_host(float *vec_a, float *vec_b, float *vec_c,
                      size_t numElements);
 void query_device(cudaDeviceProp &prop);
+
+__global__ void reduce_neighbored(int *vec_a, int *result, size_t numElements);
+__global__ void reduce_neighbored_less(int *vec_a, int *result,
+                                       size_t numElements);
 
 int main(int argc, char *argv[]) {
   srand(100);
   Argument cmd;
   cudaDeviceProp prop;
   query_device(prop);
+  argument_parser(argc, argv, cmd);
   int nx_thread = 32;
-  
+  if (cmd.exec_gpu) {
+    printf("program execute cpu\n");
+  } else {
+    printf("program execute gpu\n");
+  }
   return 0;
 }
 
@@ -54,23 +64,48 @@ void query_device(cudaDeviceProp &prop) {
   }
 }
 
+__global__ void reduce_neighbored(int *vec_a, int *result, size_t numElements) {
+  size_t tid = threadIdx.x;
+  size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
+  // convert global data pointer to local data pointer of this block
+  int *local = vec_a + (threadIdx.x * blockIdx.x);
+  // boundary check
+  if (idx >= numElements) return;
+  // in-place reduction in global memory
+  for (size_t stride = 0; stride < blockDim.x; stride *= 2) {
+    if ((tid % (2 * stride)) == 0) local[tid] += local[tid + stride];
+    // synchonize within block
+    __syncthreads();
+  }
+  // write result for this block to global mem
+  if (tid == 0) result[blockIdx.x] = *local;
+}
 
 void argument_parser(int argc, char *argv[], Argument &cmd) {
-  //-cpu -ma 5 -na 6 -mb 6 -nb 5
-  if (argc < 9) {
-    printf("usge: mulmatrix.exe -cpu[gpu] -ma 5 -na 6 -mb 6 -nb 5\n");
+  //-cpu -vecsize 5
+  if (argc < 3) {
+    printf("usge: 18424059.exe -cpu[gpu] -vecsize 4\n");
     printf("-n: is length vector > 0\n");
     exit(EXIT_FAILURE);
   } else {
     size_t i = 0;
+    cmd.version1 = true;
     while (i < argc) {
-     if (strcmp(argv[i], "-cpu") == 0)
+      if (strcmp(argv[i], "-cpu") == 0)
         cmd.exec_gpu = false;
-     else if (strcmp(argv[i], "-gpu") == 0)
+      else if (strcmp(argv[i], "-gpu") == 0)
         cmd.exec_gpu = true;
-     }
-    i++;
+      else if (strcmp(argv[i], "-vecsize") == 0) {
+        cmd.vec_size = atoi(argv[i + 1]);
+        i++;
+      }
+      else if (strcmp(argv[i], "-v2") == 0)
+        cmd.version1 = false;
+      i++;
+    }
   }
+  printf("execute program with %s, vector size: %d, vesion %s\n", cmd.exec_gpu ? "gpu" : "cpu",
+      cmd.vec_size, cmd.version1 ? "1": "2");
 }
 
 bool chek_result(const float *vec_a, const float *vec_b, const float *vec_c,
@@ -87,7 +122,6 @@ float *ramdom_init_vec(size_t vec_size) {
   }
   return vec;
 }
-
 
 void add_vec_on_host(float *vec_a, float *vec_b, float *vec_c,
                      size_t numElements) {
