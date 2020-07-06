@@ -177,6 +177,7 @@ char *concatStr(const char *s1, const char *s2) {
 }
 
 int main(int argc, char **argv) {
+
   if (argc != 3 && argc != 5) {
     printf("The number of arguments is invalid\n");
     return EXIT_FAILURE;
