@@ -36,9 +36,8 @@ int main(int argc, char *argv[]) {
   int nx_thread = 32;
   int *h_a, *h_result;  // host variable start prefix h_
   h_a = ramdom_init_vec(cmd.vec_size);
-  printf("init vector: \n");
-  print_vec(h_a, cmd.vec_size);
   h_result = (int *)safe_malloc_host<int>(cmd.vec_size);
+  long start, execute_time;
   if (!cmd.exec_gpu) {
     printf("program execute cpu pass\n");
   } else {
@@ -46,12 +45,16 @@ int main(int argc, char *argv[]) {
     int *d_a, *d_result;
     int err = _init_vector_device(d_a, h_a, d_result, cmd.vec_size);
     if (is_success(err)) {
-      printf("init vector success\n");
       dim3 blockSize(prop.maxThreadsPerBlock / nx_thread, nx_thread);
       dim3 gridSize((cmd.vec_size - 1) / blockSize.x + 1);
-      reduce_neighbored<<<gridSize, blockSize>>>(d_a, d_result,
-                                                      cmd.vec_size);
+      start = clock();
+      if (cmd.version1)
+        reduce_neighbored<<<gridSize, blockSize>>>(d_a, d_result, cmd.vec_size);
+      else
+        reduce_neighbored_less<<<gridSize, blockSize>>>(d_a, d_result,
+                                                        cmd.vec_size);
       cudaError_t cudaStatus = cudaDeviceSynchronize();
+      execute_time = time_diff(start, clock());
       if (cudaStatus != cudaSuccess) {
         fprintf(stderr,
                 "Failed to launch matrix multiplication kernel (error code "
@@ -62,17 +65,16 @@ int main(int argc, char *argv[]) {
                                cudaMemcpyDeviceToHost);
         if (is_failed(err)) printf("Failed to matrix multiplication by host");
       }
-      printf("print_vec\n");
-      print_vec(h_result, cmd.vec_size);
     } else {
       printf("faild to init vector device\n");
     }
-    /*if (cmd.version1) {
-      printf("faild to init vector version1\n");
-    }*/
     _free_device(d_a, d_result);
   }
   safe_free_host_ptr<float *>(2, h_a, h_result);
+  printf(
+      "execute time : %ld minisecond (%f second - %f "
+      "minute) \n",
+      execute_time, (execute_time / 1000.0), (execute_time / 1000.0) / 60);
   return 0;
 }
 
