@@ -13,6 +13,9 @@
   <ItemGroup>
     <CudaCompile Include="bt1.cu" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="helper.cuh" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{BE478F7C-AE7A-4F93-BA92-A2DB58E71025}</ProjectGuid>
     <RootNamespace>hw_problem1</RootNamespace>
