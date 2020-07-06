@@ -22,8 +22,9 @@ static bool is_failed(int error_code) { return error_code < 0; }
 
 static bool is_success(int error_code) { return error_code >= 0; }
 
+template <typename T>
 static void* safe_malloc_host(size_t n) {
-  void* p = malloc(n);
+  void* p = malloc(n * sizeof(T));
   if (!p) {
     fprintf(stderr, "[%s:%ul] Failed to allocate host (%ul bytes)\n", __FILE__,
             __LINE__, (unsigned long)n);

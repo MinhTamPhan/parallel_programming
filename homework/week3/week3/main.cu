@@ -16,12 +16,16 @@ typedef struct Argument {
 void argument_parser(int argc, char *argv[], Argument &cmd);
 
 void add_vec_on_host(float *vec_a, float *vec_b, float *vec_c,
-                     size_t numElements);
+                     size_t num_element);
 void query_device(cudaDeviceProp &prop);
+void print_vec(int *vec, size_t num_element);
+int *ramdom_init_vec(size_t vec_size);
 
-__global__ void reduce_neighbored(int *vec_a, int *result, size_t numElements);
-__global__ void reduce_neighbored_less(int *vec_a, int *result,
-                                       size_t numElements);
+__global__ void reduce_neighbored(int *vec_a, int *result, size_t num_element);
+__global__ void reduce_neighbored_less(int *vec_a, int *result, size_t num_element);
+int _init_vector_device(int *&vec, int *init_vec, int *&result,
+                        size_t vec_size);
+void _free_device(int *d_a, int *d_b);
 
 int main(int argc, char *argv[]) {
   srand(100);
@@ -30,11 +34,45 @@ int main(int argc, char *argv[]) {
   query_device(prop);
   argument_parser(argc, argv, cmd);
   int nx_thread = 32;
-  if (cmd.exec_gpu) {
-    printf("program execute cpu\n");
+  int *h_a, *h_result;  // host variable start prefix h_
+  h_a = ramdom_init_vec(cmd.vec_size);
+  printf("init vector: \n");
+  print_vec(h_a, cmd.vec_size);
+  h_result = (int *)safe_malloc_host<int>(cmd.vec_size);
+  if (!cmd.exec_gpu) {
+    printf("program execute cpu pass\n");
   } else {
     printf("program execute gpu\n");
+    int *d_a, *d_result;
+    int err = _init_vector_device(d_a, h_a, d_result, cmd.vec_size);
+    if (is_success(err)) {
+      printf("init vector success\n");
+      dim3 blockSize(prop.maxThreadsPerBlock / nx_thread, nx_thread);
+      dim3 gridSize((cmd.vec_size - 1) / blockSize.x + 1);
+      reduce_neighbored<<<gridSize, blockSize>>>(d_a, d_result,
+                                                      cmd.vec_size);
+      cudaError_t cudaStatus = cudaDeviceSynchronize();
+      if (cudaStatus != cudaSuccess) {
+        fprintf(stderr,
+                "Failed to launch matrix multiplication kernel (error code "
+                "%s)!\n",
+                cudaGetErrorString(cudaStatus));
+      } else {
+        err = safe_copy_device(h_result, d_result, cmd.vec_size,
+                               cudaMemcpyDeviceToHost);
+        if (is_failed(err)) printf("Failed to matrix multiplication by host");
+      }
+      printf("print_vec\n");
+      print_vec(h_result, cmd.vec_size);
+    } else {
+      printf("faild to init vector device\n");
+    }
+    /*if (cmd.version1) {
+      printf("faild to init vector version1\n");
+    }*/
+    _free_device(d_a, d_result);
   }
+  safe_free_host_ptr<float *>(2, h_a, h_result);
   return 0;
 }
 
@@ -64,21 +102,54 @@ void query_device(cudaDeviceProp &prop) {
   }
 }
 
-__global__ void reduce_neighbored(int *vec_a, int *result, size_t numElements) {
+void print_vec(int *vec, size_t num_element) {
+  printf("vector: \n");
+  for (size_t i = 0; i < num_element; i++) {
+    printf("%d \t", vec[i]);
+  }
+  printf("\n\n");
+}
+
+__global__ void reduce_neighbored(int *vec_a, int *result, size_t num_element) {
   size_t tid = threadIdx.x;
   size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
-  int *local = vec_a + (threadIdx.x * blockIdx.x);
+  int *local = vec_a + (blockDim.x * blockIdx.x);
   // boundary check
-  if (idx >= numElements) return;
+  if (idx >= num_element) return;
   // in-place reduction in global memory
-  for (size_t stride = 0; stride < blockDim.x; stride *= 2) {
+  for (size_t stride = 1; stride < blockDim.x; stride *= 2) {
     if ((tid % (2 * stride)) == 0) local[tid] += local[tid + stride];
     // synchonize within block
     __syncthreads();
   }
   // write result for this block to global mem
-  if (tid == 0) result[blockIdx.x] = *local;
+  if (tid == 0) result[blockIdx.x] = local[0];
+}
+
+__global__ void reduce_neighbored_less(int *vec_a, int *result,
+                                       size_t num_element) {
+  size_t tid = threadIdx.x;
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  // convert global data pointer to local data pointer of this block
+  int *local = vec_a + blockIdx.x * blockDim.x;
+  // boundary check
+ 
+  if (idx >= num_element) return;
+ //printf("tid = %d", tid);
+  // in-place reduction in global memory
+  for (size_t stride = 1; stride < blockDim.x; stride *= 2) {
+    int index = 2 * stride * tid;
+    if (index < blockDim.x) {
+      //printf("local[%s] = %d\n", index + stride, local[index + stride]);
+      local[index] += local[index + stride];
+      //printf("local[%s] = %d\n", index, local[index]);
+    }
+    // synchonize within block
+    __syncthreads();
+  }
+  // write result for this block to global mem
+  if (tid == 0) result[blockIdx.x] = local[0];
 }
 
 void argument_parser(int argc, char *argv[], Argument &cmd) {
@@ -104,31 +175,58 @@ void argument_parser(int argc, char *argv[], Argument &cmd) {
       i++;
     }
   }
+  // alway usge gpu
+  cmd.exec_gpu = true;
   printf("execute program with %s, vector size: %d, vesion %s\n", cmd.exec_gpu ? "gpu" : "cpu",
       cmd.vec_size, cmd.version1 ? "1": "2");
 }
 
 bool chek_result(const float *vec_a, const float *vec_b, const float *vec_c,
-                 size_t numElements) {
-  for (int i = 0; i < numElements; ++i)
+                 size_t num_element) {
+  for (int i = 0; i < num_element; ++i)
     if (fabs((double)vec_a[i] + vec_b[i] - vec_c[i]) > EPSILON) return false;
   return true;
 }
 
-float *ramdom_init_vec(size_t vec_size) {
-  float *vec = (float *)safe_malloc_host(vec_size * sizeof(float));
+int *ramdom_init_vec(size_t vec_size) {
+  int *vec = (int *)safe_malloc_host<int>(vec_size);
   for (int i = 0; i < vec_size; ++i) {
-    vec[i] = rand() / (float)RAND_MAX;
+    vec[i] = rand();
   }
   return vec;
 }
 
 void add_vec_on_host(float *vec_a, float *vec_b, float *vec_c,
-                     size_t numElements) {
-  for (size_t i = 0; i < numElements; i++) vec_c[i] = vec_a[i] + vec_b[i];
+                     size_t num_element) {
+  for (size_t i = 0; i < num_element; i++) vec_c[i] = vec_a[i] + vec_b[i];
 }
-void _free_device(float *d_a, float *d_b, float *d_c) {
+
+void _free_device(int *d_a, int *d_b) {
   safe_free_device(d_a);
   safe_free_device(d_b);
-  safe_free_device(d_c);
+}
+
+int _init_vector_device(int *&vec, int *init_vec, int *&result, size_t vec_size) {
+
+  int err = safe_malloc_device(vec, vec_size);
+  if (is_failed(err)) {
+    fprintf(stderr, "Failed to allocate device vector init_vec (error code %d)!\n",
+            err);
+    return -1;
+  } else {
+    err = safe_copy_device(vec, init_vec, vec_size,
+                           cudaMemcpyKind::cudaMemcpyHostToDevice);
+    if (is_failed(err)) {
+      fprintf(stderr, "Failed to copy host to device vector init_vec (error code %d)!\n",
+              err);
+      return -1;
+    }
+    err = safe_malloc_device(result, vec_size);
+    if (is_failed(err)) {
+      fprintf(stderr, "Failed to allocate device vector result (error code %d)!\n",
+              err);
+      return -1;
+    }
+  }
+  return 0;
 }
