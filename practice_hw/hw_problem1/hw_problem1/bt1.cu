@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>  
 
 using namespace std;
 #define CHECK(call)                                          \
@@ -100,29 +101,25 @@ __global__ void blurImgKernel(uchar3 *inPixels, int width, int height,
   // TODO
   int ix = threadIdx.x + blockIdx.x * blockDim.x;
   int iy = threadIdx.y + blockIdx.y * blockDim.y;
+  
   if (ix < width && iy < height) {
     float3 outPixel = make_float3(0, 0, 0);
     for (int filterR = 0; filterR < filterWidth; filterR++) {
+      int inPixelsR = (iy - filterWidth / 2) + filterR;
       for (int filterC = 0; filterC < filterWidth; filterC++) {
         float filterVal = filter[filterR * filterWidth + filterC];
-
-        int inPixelsR = (iy - filterWidth / 2) + filterR;
+        //printf("filterVal = %.4f\n", filterVal);
         int inPixelsC = (ix - filterWidth / 2) + filterC;
         inPixelsR = min(height - 1, max(0, inPixelsR));
         inPixelsC = min(width - 1, max(0, inPixelsC));
         uchar3 inPixel = inPixels[inPixelsR * width + inPixelsC];
-
-        outPixel.x += filterVal * inPixel.x;
-        outPixel.y += filterVal * inPixel.y;
-        outPixel.z += filterVal * inPixel.z;
+        outPixel.x += (filterVal * inPixel.x);
+        outPixel.y += (filterVal * inPixel.y);
+        outPixel.z += (filterVal * inPixel.z);
       }
     }
     outPixels[iy * width + ix] =
         make_uchar3(outPixel.x, outPixel.y, outPixel.z);
-
-    /*for (size_t j = 0; j < mb; j++) {
-      outPixels[iy * ma + ix] += d_a[iy * na + j] * d_b[j * ma + ix];
-    }*/
   }
 }
 void _init_device_mem(uchar3 *inPixels, uchar3 *&d_inPixels, int size,
@@ -133,8 +130,10 @@ void _init_device_mem(uchar3 *inPixels, uchar3 *&d_inPixels, int size,
   CHECK(cudaMemcpy(d_inPixels, inPixels, buff_size,
                    cudaMemcpyKind::cudaMemcpyHostToDevice));
 
-  CHECK(cudaMalloc((void **)&d_filter, filterWidth * sizeof(float)));
-  CHECK(cudaMemcpy(d_filter, h_filter, filterWidth * sizeof(float),
+  CHECK(cudaMalloc((void **)&d_filter,
+                   filterWidth * filterWidth * sizeof(float)));
+  CHECK(cudaMemcpy(d_filter, h_filter,
+                   filterWidth * filterWidth * sizeof(float),
                    cudaMemcpyKind::cudaMemcpyHostToDevice));
 
   CHECK(cudaMalloc((void **)&d_outPixels, buff_size));
@@ -254,8 +253,8 @@ int main(int argc, char **argv) {
 
   // Write results to files
   char *outFileNameBase = strtok(argv[2], ".");  // Get rid of extension
-  writePnm(correctOutPixels, width, height,
-           concatStr(outFileNameBase, "_host.pnm"));
+  /*writePnm(correctOutPixels, width, height,
+           concatStr(outFileNameBase, "_host.pnm"));*/
   writePnm(outPixels, width, height, concatStr(outFileNameBase, "_device.pnm"));
 
   // Free memories
