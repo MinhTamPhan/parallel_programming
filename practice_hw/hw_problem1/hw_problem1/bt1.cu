@@ -98,7 +98,32 @@ __global__ void blurImgKernel(uchar3 *inPixels, int width, int height,
                               float *filter, int filterWidth,
                               uchar3 *outPixels) {
   // TODO
-  printf("filterWidth %d\n", filterWidth);
+  int ix = threadIdx.x + blockIdx.x * blockDim.x;
+  int iy = threadIdx.y + blockIdx.y * blockDim.y;
+  if (ix < width && iy < height) {
+    float3 outPixel = make_float3(0, 0, 0);
+    for (int filterR = 0; filterR < filterWidth; filterR++) {
+      for (int filterC = 0; filterC < filterWidth; filterC++) {
+        float filterVal = filter[filterR * filterWidth + filterC];
+
+        int inPixelsR = (iy - filterWidth / 2) + filterR;
+        int inPixelsC = (ix - filterWidth / 2) + filterC;
+        inPixelsR = min(height - 1, max(0, inPixelsR));
+        inPixelsC = min(width - 1, max(0, inPixelsC));
+        uchar3 inPixel = inPixels[inPixelsR * width + inPixelsC];
+
+        outPixel.x += filterVal * inPixel.x;
+        outPixel.y += filterVal * inPixel.y;
+        outPixel.z += filterVal * inPixel.z;
+      }
+    }
+    outPixels[iy * width + ix] =
+        make_uchar3(outPixel.x, outPixel.y, outPixel.z);
+
+    /*for (size_t j = 0; j < mb; j++) {
+      outPixels[iy * ma + ix] += d_a[iy * na + j] * d_b[j * ma + ix];
+    }*/
+  }
 }
 void _init_device_mem(uchar3 *inPixels, uchar3 *&d_inPixels, int size,
                           float *h_filter, int filterWidth, float *&d_filter,
