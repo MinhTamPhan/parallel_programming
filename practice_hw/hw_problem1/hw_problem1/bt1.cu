@@ -1,7 +1,10 @@
+#include <cuda_runtime_api.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
-#include "helper.cuh"
 using namespace std;
 #define CHECK(call)                                          \
   {                                                          \
@@ -95,8 +98,9 @@ __global__ void blurImgKernel(uchar3 *inPixels, int width, int height,
                               float *filter, int filterWidth,
                               uchar3 *outPixels) {
   // TODO
+  printf("filterWidth %d\n", filterWidth);
 }
-void _allocate_device_mem(uchar3 *inPixels, uchar3 *&d_inPixels, int size,
+void _init_device_mem(uchar3 *inPixels, uchar3 *&d_inPixels, int size,
                           float *h_filter, int filterWidth, float *&d_filter,
                           uchar3 *&d_outPixels) {
   size_t buff_size = size * sizeof(uchar3);
@@ -145,12 +149,20 @@ void blurImg(uchar3 *inPixels, int width, int height, float *filter,
     cudaGetDeviceProperties(&devProp, 0);
     printf("GPU name: %s\n", devProp.name);
     printf("GPU compute capability: %d.%d\n", devProp.major, devProp.minor);
-
     // TODO
-    uchar3 *d_out;
-
-    dim3 gridSize((cmd.dim_a.y - 1) / blockSize.x + 1,
-                  (cmd.dim_b.y - 1) / blockSize.y + 1);
+    uchar3 *d_in_pixels, *d_outPixels;  // prefix d_ = device mem
+    dim3 gridSize(width / blockSize.x + 1, height / blockSize.y + 1);
+    float *d_filter;
+    // initialize device mem: allocate device mem and copy inPixels, d_filter. d_outPixels only allocate
+    _init_device_mem(inPixels, d_in_pixels, width * height, filter,
+                         filterWidth, d_filter, d_outPixels);
+    blurImgKernel<<<gridSize, blockSize>>>(d_in_pixels, width, height, d_filter,
+                                           filterWidth, d_outPixels);
+    CHECK(cudaMemcpy(outPixels, d_outPixels, width * height * sizeof(uchar3),
+                     cudaMemcpyKind::cudaMemcpyDeviceToHost));
+    CHECK(cudaFree(d_in_pixels));
+    CHECK(cudaFree(d_outPixels));
+    CHECK(cudaFree(d_filter));
   }
   timer.Stop();
   float time = timer.Elapsed();
@@ -177,7 +189,6 @@ char *concatStr(const char *s1, const char *s2) {
 }
 
 int main(int argc, char **argv) {
-
   if (argc != 3 && argc != 5) {
     printf("The number of arguments is invalid\n");
     return EXIT_FAILURE;
@@ -218,7 +229,8 @@ int main(int argc, char **argv) {
 
   // Write results to files
   char *outFileNameBase = strtok(argv[2], ".");  // Get rid of extension
-  writePnm(correctOutPixels, width, height, concatStr(outFileNameBase, "_host.pnm"));
+  writePnm(correctOutPixels, width, height,
+           concatStr(outFileNameBase, "_host.pnm"));
   writePnm(outPixels, width, height, concatStr(outFileNameBase, "_device.pnm"));
 
   // Free memories
