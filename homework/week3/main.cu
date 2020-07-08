@@ -12,6 +12,7 @@ typedef struct Argument {
   bool exec_gpu;
   size_t vec_size;
   bool version1;
+  int block_x, block_y;
 };
 void argument_parser(int argc, char *argv[], Argument &cmd);
 
@@ -43,18 +44,17 @@ int main(int argc, char *argv[]) {
   } else {
     printf("program execute gpu\n");
     int *d_a, *d_result;
+    start = clock();
     int err = _init_vector_device(d_a, h_a, d_result, cmd.vec_size);
     if (is_success(err)) {
-      dim3 blockSize(prop.maxThreadsPerBlock / nx_thread, nx_thread);
+      dim3 blockSize(cmd.block_x, cmd.block_y);
       dim3 gridSize((cmd.vec_size - 1) / blockSize.x + 1);
-      start = clock();
       if (cmd.version1)
         reduce_neighbored<<<gridSize, blockSize>>>(d_a, d_result, cmd.vec_size);
       else
         reduce_neighbored_less<<<gridSize, blockSize>>>(d_a, d_result,
                                                         cmd.vec_size);
       cudaError_t cudaStatus = cudaDeviceSynchronize();
-      execute_time = time_diff(start, clock());
       if (cudaStatus != cudaSuccess) {
         fprintf(stderr,
                 "Failed to launch matrix multiplication kernel (error code "
@@ -63,8 +63,9 @@ int main(int argc, char *argv[]) {
       } else {
         err = safe_copy_device(h_result, d_result, cmd.vec_size,
                                cudaMemcpyDeviceToHost);
-        if (is_failed(err)) printf("Failed to matrix multiplication by host");
+        if (is_failed(err)) printf("Failed to matrix multiplication by kernel\n");
       }
+      execute_time = time_diff(start, clock());
     } else {
       printf("faild to init vector device\n");
     }
@@ -138,15 +139,11 @@ __global__ void reduce_neighbored_less(int *vec_a, int *result,
   // boundary check
  
   if (idx >= num_element) return;
- //printf("tid = %d", tid);
   // in-place reduction in global memory
   for (size_t stride = 1; stride < blockDim.x; stride *= 2) {
     int index = 2 * stride * tid;
-    if (index < blockDim.x) {
-      //printf("local[%s] = %d\n", index + stride, local[index + stride]);
+    if (index < blockDim.x)
       local[index] += local[index + stride];
-      //printf("local[%s] = %d\n", index, local[index]);
-    }
     // synchonize within block
     __syncthreads();
   }
@@ -156,8 +153,8 @@ __global__ void reduce_neighbored_less(int *vec_a, int *result,
 
 void argument_parser(int argc, char *argv[], Argument &cmd) {
   //-cpu -vecsize 5
-  if (argc < 3) {
-    printf("usge: 18424059.exe -cpu[gpu] -vecsize 4\n");
+  if (argc < 5) {
+    printf("usge: 18424059.exe -cpu[gpu] -vecsize 4 -bsize 32 32\n");
     printf("-n: is length vector > 0\n");
     exit(EXIT_FAILURE);
   } else {
@@ -169,11 +166,14 @@ void argument_parser(int argc, char *argv[], Argument &cmd) {
       else if (strcmp(argv[i], "-gpu") == 0)
         cmd.exec_gpu = true;
       else if (strcmp(argv[i], "-vecsize") == 0) {
-        cmd.vec_size = atoi(argv[i + 1]);
-        i++;
+        cmd.vec_size = atoi(argv[++i]);
       }
       else if (strcmp(argv[i], "-v2") == 0)
         cmd.version1 = false;
+      else if (strcmp(argv[i], "-bsize") == 0) {
+        cmd.block_x = atoi(argv[++i]);
+        cmd.block_y = atoi(argv[++i]);
+      }
       i++;
     }
   }
