@@ -6,13 +6,21 @@ using namespace std;
 void queryDevice(cudaDeviceProp& prop);
 int sumArraysOnHost(int* A, const int N);
 void initialData(int* ip, int size);
-void checkResult(int* hostRef, int* gpuRef, const int N);
+void checkResult(int hostRef, int* gpuRef, const int N);
 void printVec(int* vec, const size_t num_element);
 void initialDeviceMem(int* hA, const size_t numE, int*& dA, int*& dRes,
                       const size_t numRes);
 
-__global__ void reduceNeighbored(int* vec_a, int* result,
-                                 const size_t numElement);
+__global__ void reduceNeighbored(int* vec_a, int* result, const size_t nElem);
+__global__ void reduceNeighboredLess(int* vec_a, int* result,
+                                     const size_t nElem);
+__global__ void reduceInterleaved(int* vec_a, int* result, const size_t nElem);
+__global__ void reduceUnrolling2(int* vec_a, int* result, const size_t nElem);
+__global__ void reduceUnrollingWrap8(int* vec_a, int* result,
+                                     const size_t nElem);
+template <unsigned int iBlockSize>
+__global__ void reduceCompleteUroll(int* vec_a, int* result,
+                                    const size_t nElem);
 
 int main(int argc, char* argv[]) { 
   srand(0);
@@ -33,19 +41,79 @@ int main(int argc, char* argv[]) {
   hA = (int*)malloc(nBytes);
   initialData(hA, nElem);
   int hostRes = sumArraysOnHost(hA, nElem);
-  printf("%d\n", hostRes);
+  //printf("%d\n", hostRes);
   int threadsPerBlock = 512;  // 256;
   int blocksPerGrid = (nElem + threadsPerBlock - 1) / threadsPerBlock;
   int* dA, *dRes;
   hRes = (int*)malloc(blocksPerGrid);
+  GpuTimer timer;
+
+  timer.Start();
   initialDeviceMem(hA, nElem, dA, dRes, blocksPerGrid);
   reduceNeighbored<<<blocksPerGrid, threadsPerBlock>>>(dA, dRes, nElem);
-  //cudaDeviceSynchronize();
   safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
-  printVec(hRes, blocksPerGrid);
+  //checkResult(hostRes, hRes, blocksPerGrid);
   safe_free_device<int*>(2, dA, dRes);
+  timer.Stop();
+  float time = timer.Elapsed();
+  printf("Processing reduceNeighbored time (%s): %f ms\n\n", "use device", time);
+
+  timer.Start();
+  initialDeviceMem(hA, nElem, dA, dRes, blocksPerGrid);
+  reduceNeighboredLess<<<blocksPerGrid, threadsPerBlock>>>(dA, dRes, nElem);
+  safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
+  //checkResult(hostRes, hRes, blocksPerGrid);
+  safe_free_device<int*>(2, dA, dRes);
+  timer.Stop();
+  time = timer.Elapsed();
+  printf("Processing reduceNeighboredLess time (%s): %f ms\n\n", "use device",
+         time);
+
+  timer.Start();
+  initialDeviceMem(hA, nElem, dA, dRes, blocksPerGrid);
+  reduceInterleaved<<<blocksPerGrid, threadsPerBlock>>>(dA, dRes, nElem);
+  safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
+  //checkResult(hostRes, hRes, blocksPerGrid);
+  safe_free_device<int*>(2, dA, dRes);
+  timer.Stop();
+  time = timer.Elapsed();
+  printf("Processing reduceInterleaved time (%s): %f ms\n\n", "use device",
+         time);
+
+  timer.Start();
+  initialDeviceMem(hA, nElem, dA, dRes, blocksPerGrid);
+  reduceUnrolling2<<<blocksPerGrid, threadsPerBlock>>>(dA, dRes, nElem);
+  safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
+  //checkResult(hostRes, hRes, blocksPerGrid);
+  safe_free_device<int*>(2, dA, dRes);
+  timer.Stop();
+  time = timer.Elapsed();
+  printf("Processing reduceUnrolling 2 warp time (%s): %f ms\n\n", "use device",
+         time);
+
+  timer.Start();
+  initialDeviceMem(hA, nElem, dA, dRes, blocksPerGrid);
+  reduceUnrollingWrap8<<<blocksPerGrid, threadsPerBlock>>>(dA, dRes, nElem);
+  safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
+  //checkResult(hostRes, hRes, blocksPerGrid);
+  safe_free_device<int*>(2, dA, dRes);
+  timer.Stop();
+  time = timer.Elapsed();
+  printf("Processing reduceUnrolling Wrap 8 time (%s): %f ms\n\n", "use device",
+         time);
+  timer.Start();
+  initialDeviceMem(hA, nElem, dA, dRes, blocksPerGrid);
+  reduceCompleteUroll<512><<<blocksPerGrid, threadsPerBlock>>>(dA, dRes, nElem);
+  safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
+  // checkResult(hostRes, hRes, blocksPerGrid);
+  safe_free_device<int*>(2, dA, dRes);
+  timer.Stop();
+  time = timer.Elapsed();
+  printf("Processing reduceCompleteUroll Wrap 8 time (%s): %f ms\n\n", "use device",
+         time);
+
   safe_free_host_ptr<int*>(1, hA);
-  //free(hRes);
+  free(hRes);
   return 0; 
 }
 
@@ -75,17 +143,17 @@ void queryDevice(cudaDeviceProp& prop) {
   }
 }
 
-void checkResult(int* hostRef, int* gpuRef, const int N) {
-  int match = 1;
+void checkResult(int hostRef, int* gpuRef, const int N) {
+  int sum = 0;
+  bool match = false;
   for (int i = 0; i < N; i++) {
-    if (hostRef[i] != gpuRef[i]) {
-      match = 0;
-      printf("Arrays do not match!\n");
-      printf("host %5.2d gpu %5.2d at current %d\n", hostRef[i], gpuRef[i], i);
-      break;
-    }
+    sum += gpuRef[i];
   }
-  if (match) printf("Arrays match.\n\n");
+  match = sum == hostRef;
+  if (!match) {
+    printf("gpuRef do not match!\n");
+    printf("host %5.2d gpu %5.2d\n", hostRef, sum);
+  }else printf("gpuRef and hostRef match.\n");
 }
 
 void initialData(int* ip, int size) {
@@ -118,14 +186,13 @@ void initialDeviceMem(int* hA, const size_t numE, int* &dA, int* &dRes,
   safe_malloc_device(dRes, numRes);
 }
 
-__global__ void reduceNeighbored(int* vec_a, int* result,
-                                 const size_t numElement) {
+__global__ void reduceNeighbored(int* vec_a, int* result, const size_t nElem) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
   int* local = vec_a + (blockDim.x * blockIdx.x);
   // boundary check
-  if (idx >= numElement) return;
+  if (idx >= nElem) return;
   // in-place reduction in global memory
   for (size_t stride = 1; stride < blockDim.x; stride *= 2) {
     if ((tid % (2 * stride)) == 0) local[tid] += local[tid + stride];
@@ -137,14 +204,14 @@ __global__ void reduceNeighbored(int* vec_a, int* result,
 }
 
 __global__ void reduceNeighboredLess(int* vec_a, int* result,
-                                     const size_t numElement) {
+                                     const size_t nElem) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
   int* local = vec_a + blockIdx.x * blockDim.x;
   // boundary check
 
-  if (idx >= numElement) return;
+  if (idx >= nElem) return;
   // in-place reduction in global memory
   for (size_t stride = 1; stride < blockDim.x; stride *= 2) {
     int index = 2 * stride * tid;
@@ -156,17 +223,16 @@ __global__ void reduceNeighboredLess(int* vec_a, int* result,
   if (tid == 0) result[blockIdx.x] = local[0];
 }
 
-__global__ void reduceInterleaved(int* vec_a, int* result,
-                                  const size_t numElement) {
+__global__ void reduceInterleaved(int* vec_a, int* result, const size_t nElem) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
   int* local = vec_a + blockIdx.x * blockDim.x;
   // boundary check
 
-  if (idx >= numElement) return;
+  if (idx >= nElem) return;
   // in-place reduction in global memory
-  for (size_t stride = blockIdx.x / 2; stride > 0; stride >>= 1) {
+  for (size_t stride = blockDim.x / 2; stride > 0; stride >>= 1) {
     if (tid < stride) local[tid] += local[tid + stride];
     // synchonize within block
     __syncthreads();
@@ -175,17 +241,16 @@ __global__ void reduceInterleaved(int* vec_a, int* result,
   if (tid == 0) result[blockIdx.x] = local[0];
 }
 
-__global__ void reduceUnrolling2(int* vec_a, int* result,
-                                 const size_t numElement) {
+__global__ void reduceUnrolling2(int* vec_a, int* result, const size_t nElem) {
   size_t tid = threadIdx.x;
-  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t idx = blockIdx.x * blockDim.x * 2 + threadIdx.x;
   // convert global data pointer to local data pointer of this block
-  int* local = vec_a + blockIdx.x * blockDim.x;
+  int* local = vec_a + blockIdx.x * blockDim.x * 2;
   // unrolling 2
-  if (idx + blockDim.x < numElement) local[idx] += local[idx + blockDim.x];
+  if (idx + blockDim.x < nElem) local[idx] += local[idx + blockDim.x];
   __syncthreads();
   // in-place reduction in global memory
-  for (size_t stride = blockIdx.x / 2; stride > 0; stride >>= 1) {
+  for (size_t stride = blockDim.x / 2; stride > 0; stride >>= 1) {
     if (tid < stride) local[tid] += local[tid + stride];
     // synchonize within block
     __syncthreads();
@@ -194,27 +259,26 @@ __global__ void reduceUnrolling2(int* vec_a, int* result,
   if (tid == 0) result[blockIdx.x] = local[0];
 }
 
-__global__ void reduceUnrollingWrap8(int* vec_a, int* result,
-                                     const size_t numElement) {
+__global__ void reduceUnrollingWrap8(int* vec_a, int* result, const size_t nElem) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x * 8 + threadIdx.x;
   // convert global data pointer to local data pointer of this block
   int* local = vec_a + blockIdx.x * blockDim.x * 8;
   // unrolling 8
-  if (idx + 7 * blockIdx.x < numElement) {
+  if (idx + 7 * blockDim.x < nElem) {
     int a1 = vec_a[idx];
-    int a2 = vec_a[idx + blockIdx.x];
-    int a3 = vec_a[idx + 2 * blockIdx.x];
-    int a4 = vec_a[idx + 3 * blockIdx.x];
-    int b1 = vec_a[idx + 4 * blockIdx.x];
-    int b2 = vec_a[idx + 5 * blockIdx.x];
-    int b3 = vec_a[idx + 6 * blockIdx.x];
-    int b4 = vec_a[idx + 7 * blockIdx.x];
+    int a2 = vec_a[idx + blockDim.x];
+    int a3 = vec_a[idx + 2 * blockDim.x];
+    int a4 = vec_a[idx + 3 * blockDim.x];
+    int b1 = vec_a[idx + 4 * blockDim.x];
+    int b2 = vec_a[idx + 5 * blockDim.x];
+    int b3 = vec_a[idx + 6 * blockDim.x];
+    int b4 = vec_a[idx + 7 * blockDim.x];
     local[idx] = a1 + a2 + a3 + a4 + b1 + b2 + b3 + b4;
   }
   __syncthreads();
   // in-place reduction in global memory
-  for (size_t stride = blockIdx.x / 2; stride > 0; stride >>= 1) {
+  for (size_t stride = blockDim.x / 2; stride > 32; stride >>= 1) {
     if (tid < stride) local[tid] += local[tid + stride];
     // synchonize within block
     __syncthreads();
@@ -234,27 +298,26 @@ __global__ void reduceUnrollingWrap8(int* vec_a, int* result,
 }
 
 template <unsigned int iBlockSize>
-__global__ void reduceCompleteUroll(int* vec_a, int* result,
-                                    const size_t numElement) {
+__global__ void reduceCompleteUroll(int* vec_a, int* result, const size_t nElem) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x * 8 + threadIdx.x;
   // convert global data pointer to local data pointer of this block
   int* local = vec_a + blockIdx.x * blockDim.x * 8;
   // unrolling 8
-  if (idx + 7 * blockIdx.x < numElement) {
+  if (idx + 7 * blockIdx.x < nElem) {
     int a1 = vec_a[idx];
-    int a2 = vec_a[idx + blockIdx.x];
-    int a3 = vec_a[idx + 2 * blockIdx.x];
-    int a4 = vec_a[idx + 3 * blockIdx.x];
-    int b1 = vec_a[idx + 4 * blockIdx.x];
-    int b2 = vec_a[idx + 5 * blockIdx.x];
-    int b3 = vec_a[idx + 6 * blockIdx.x];
-    int b4 = vec_a[idx + 7 * blockIdx.x];
+    int a2 = vec_a[idx + blockDim.x];
+    int a3 = vec_a[idx + 2 * blockDim.x];
+    int a4 = vec_a[idx + 3 * blockDim.x];
+    int b1 = vec_a[idx + 4 * blockDim.x];
+    int b2 = vec_a[idx + 5 * blockDim.x];
+    int b3 = vec_a[idx + 6 * blockDim.x];
+    int b4 = vec_a[idx + 7 * blockDim.x];
     local[idx] = a1 + a2 + a3 + a4 + b1 + b2 + b3 + b4;
   }
   __syncthreads();
   // in-place reduction in global memory
-  for (size_t stride = blockIdx.x / 2; stride > 0; stride >>= 1) {
+  for (size_t stride = blockDim.x / 2; stride > 32; stride >>= 1) {
     if (tid < stride) local[tid] += local[tid + stride];
     // synchonize within block
     __syncthreads();
