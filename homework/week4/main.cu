@@ -3,24 +3,50 @@
 #include <time.h>
 using namespace std;
 
-
-typedef struct Argument {
-  bool exec_gpu;
-  size_t vec_size;
-  bool version1;
-  int block_x, block_y;
-};
-
-void argumentParser(int argc, char* argv[], Argument& cmd);
-
 void queryDevice(cudaDeviceProp& prop);
-void sumArraysOnHost(int* A, int* B, int* C, const int N);
+int sumArraysOnHost(int* A, const int N);
 void initialData(int* ip, int size);
 void checkResult(int* hostRef, int* gpuRef, const int N);
+void printVec(int* vec, const size_t num_element);
+void initialDeviceMem(int* hA, const size_t numE, int*& dA, int*& dRes,
+                      const size_t numRes);
+
+__global__ void reduceNeighbored(int* vec_a, int* result,
+                                 const size_t numElement);
 
 int main(int argc, char* argv[]) { 
-	cout << "hello word\n";
-	return 0; 
+  srand(0);
+  cudaDeviceProp prop;
+  queryDevice(prop);
+  int ipower = 10;
+  if (argc > 1) ipower = atoi(argv[1]);
+  int nElem = 1 << ipower;
+  size_t nBytes = nElem * sizeof(int);
+  if (ipower < 18) {
+    printf("Vector size %d power %d nbytes %3.0f KB\n", nElem, ipower,
+           (float)nBytes / (1024.0f));
+  } else {
+    printf("Vector size %d power %d nbytes %3.0f MB\n", nElem, ipower,
+           (float)nBytes / (1024.0f * 1024.0f));
+  }
+  int* hA, *hRes;
+  hA = (int*)malloc(nBytes);
+  initialData(hA, nElem);
+  int hostRes = sumArraysOnHost(hA, nElem);
+  printf("%d\n", hostRes);
+  int threadsPerBlock = 512;  // 256;
+  int blocksPerGrid = (nElem + threadsPerBlock - 1) / threadsPerBlock;
+  int* dA, *dRes;
+  hRes = (int*)malloc(blocksPerGrid);
+  initialDeviceMem(hA, nElem, dA, dRes, blocksPerGrid);
+  reduceNeighbored<<<blocksPerGrid, threadsPerBlock>>>(dA, dRes, nElem);
+  //cudaDeviceSynchronize();
+  safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
+  printVec(hRes, blocksPerGrid);
+  safe_free_device<int*>(2, dA, dRes);
+  safe_free_host_ptr<int*>(1, hA);
+  //free(hRes);
+  return 0; 
 }
 
 void queryDevice(cudaDeviceProp& prop) {
@@ -50,6 +76,7 @@ void queryDevice(cudaDeviceProp& prop) {
 }
 
 void checkResult(int* hostRef, int* gpuRef, const int N) {
+  int match = 1;
   for (int i = 0; i < N; i++) {
     if (hostRef[i] != gpuRef[i]) {
       match = 0;
@@ -63,23 +90,38 @@ void checkResult(int* hostRef, int* gpuRef, const int N) {
 
 void initialData(int* ip, int size) {
   // generate different seed for random number
-  time_t t;
-  srand((unsigned)time(&t));
+  // time_t t;
+  // srand((unsigned)time(&t));
   for (int i = 0; i < size; i++) {
     ip[i] = rand() & 0xFF;
   }
 }
 
-void sumArraysOnHost(int* A, int* B, int* C, const int N) {
-  for (int idx = 0; idx < N; idx++) C[idx] = A[idx] + B[idx];
+int sumArraysOnHost(int* A, const int N) {
+  int res = 0;
+  for (int idx = 0; idx < N; idx++) res  += A[idx];
+  return res;
 }
 
-void argumentParser(int argc, char* argv[], Argument& cmd) {
-
+void printVec(int* vec, const size_t num_element) {
+  printf("vector: \n");
+  for (size_t i = 0; i < num_element; i++) {
+    printf("%d \t", vec[i]);
+  }
+  printf("\n\n");
 }
 
-__global__ void reduceNeighbored(int* vec_a, int* result, size_t numElement) {
+void initialDeviceMem(int* hA, const size_t numE, int* &dA, int* &dRes,
+                      const size_t numRes) {
+  safe_malloc_device(dA, numE);
+  safe_copy_device(dA, hA, numE, cudaMemcpyKind::cudaMemcpyHostToDevice);
+  safe_malloc_device(dRes, numRes);
+}
+
+__global__ void reduceNeighbored(int* vec_a, int* result,
+                                 const size_t numElement) {
   size_t tid = threadIdx.x;
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
   int* local = vec_a + (blockDim.x * blockIdx.x);
   // boundary check
@@ -94,7 +136,8 @@ __global__ void reduceNeighbored(int* vec_a, int* result, size_t numElement) {
   if (tid == 0) result[blockIdx.x] = local[0];
 }
 
-__global__ void reduceNeighboredLess(int* vec_a, int* result, size_t numElement) {
+__global__ void reduceNeighboredLess(int* vec_a, int* result,
+                                     const size_t numElement) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
@@ -113,7 +156,8 @@ __global__ void reduceNeighboredLess(int* vec_a, int* result, size_t numElement)
   if (tid == 0) result[blockIdx.x] = local[0];
 }
 
-__global__ void reduceInterleaved(int* vec_a, int* result, size_t numElement) {
+__global__ void reduceInterleaved(int* vec_a, int* result,
+                                  const size_t numElement) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
@@ -131,7 +175,8 @@ __global__ void reduceInterleaved(int* vec_a, int* result, size_t numElement) {
   if (tid == 0) result[blockIdx.x] = local[0];
 }
 
-__global__ void reduceUnrolling2(int* vec_a, int* result, size_t numElement) {
+__global__ void reduceUnrolling2(int* vec_a, int* result,
+                                 const size_t numElement) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   // convert global data pointer to local data pointer of this block
@@ -149,7 +194,8 @@ __global__ void reduceUnrolling2(int* vec_a, int* result, size_t numElement) {
   if (tid == 0) result[blockIdx.x] = local[0];
 }
 
-__global__ void reduceUnrollingWrap8(int* vec_a, int* result, size_t numElement) {
+__global__ void reduceUnrollingWrap8(int* vec_a, int* result,
+                                     const size_t numElement) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x * 8 + threadIdx.x;
   // convert global data pointer to local data pointer of this block
@@ -189,7 +235,7 @@ __global__ void reduceUnrollingWrap8(int* vec_a, int* result, size_t numElement)
 
 template <unsigned int iBlockSize>
 __global__ void reduceCompleteUroll(int* vec_a, int* result,
-    size_t numElement) {
+                                    const size_t numElement) {
   size_t tid = threadIdx.x;
   size_t idx = blockIdx.x * blockDim.x * 8 + threadIdx.x;
   // convert global data pointer to local data pointer of this block
@@ -214,13 +260,13 @@ __global__ void reduceCompleteUroll(int* vec_a, int* result,
     __syncthreads();
   }
   // unrolling warp
-  if (iBlockSize >= 1024 && tid = 512) local[tid] += local[tid + 512];
+  if (iBlockSize >= 1024 && tid == 512) local[tid] += local[tid + 512];
   __syncthreads();
-  if (iBlockSize >= 512 && tid = 256) local[tid] += local[tid + 512];
+  if (iBlockSize >= 512 && tid == 256) local[tid] += local[tid + 256];
   __syncthreads();
-  if (iBlockSize >= 256 && tid = 128) local[tid] += local[tid + 128];
+  if (iBlockSize >= 256 && tid == 128) local[tid] += local[tid + 128];
   __syncthreads();
-  if (iBlockSize >= 128 && tid = 64) local[tid] += local[tid + 64];
+  if (iBlockSize >= 128 && tid == 64) local[tid] += local[tid + 64];
   __syncthreads();
   // write result for this block to global mem
   if (tid == 0) result[blockIdx.x] = local[0];

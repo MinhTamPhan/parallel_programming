@@ -67,17 +67,18 @@ static int safe_copy_device(T* dest, T* src, size_t size,
 }
 
 template <typename T>
-static int safe_free_device(T* dev_ptr, void (*handle_exception)() = nullptr) {
-  cudaError_t err = cudaFree(dev_ptr);
-  if (err != cudaSuccess) {
-    printf("cuda free error: %s in %s at line %d!\n", cudaGetErrorString(err),
-           __FILE__, __LINE__);
-    if (handle_exception != nullptr) {
-      (*handle_exception)();
-      exit(EXIT_FAILURE);
+static int safe_free_device(int count, ...) {
+  va_list list;
+  va_start(list, count);
+  for (int i = 0; i < count; i++) {
+    cudaError_t err = cudaFree(va_arg(list, T));
+    if (err != cudaSuccess) {
+      printf("cuda free error: %s in %s at line %d!\n", cudaGetErrorString(err),
+             __FILE__, __LINE__);
+      return CUDA_FREE_FAILED;
     }
-    return CUDA_FREE_FAILED;
   }
+  va_end(list);
   return CUDA_SUCCESS;
 }
 
