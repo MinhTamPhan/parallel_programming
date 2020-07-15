@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
   safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
   //checkResult(hostRes, hRes, blocksPerGrid);
   safe_free_device<int*>(2, dA, dRes);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   timer.Stop();
   float time = timer.Elapsed();
   printf("Processing reduceNeighbored time (%s): %f ms\n\n", "use device", time);
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
   safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
   //checkResult(hostRes, hRes, blocksPerGrid);
   safe_free_device<int*>(2, dA, dRes);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   timer.Stop();
   time = timer.Elapsed();
   printf("Processing reduceNeighboredLess time (%s): %f ms\n\n", "use device",
@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
   safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
   //checkResult(hostRes, hRes, blocksPerGrid);
   safe_free_device<int*>(2, dA, dRes);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   timer.Stop();
   time = timer.Elapsed();
   printf("Processing reduceInterleaved time (%s): %f ms\n\n", "use device",
@@ -92,7 +92,7 @@ int main(int argc, char* argv[]) {
   safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
   //checkResult(hostRes, hRes, blocksPerGrid);
   safe_free_device<int*>(2, dA, dRes);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   timer.Stop();
   time = timer.Elapsed();
   printf("Processing reduceUnrolling 2 warp time (%s): %f ms\n\n", "use device",
@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
   safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
   //checkResult(hostRes, hRes, blocksPerGrid);
   safe_free_device<int*>(2, dA, dRes);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   timer.Stop();
   time = timer.Elapsed();
   printf("Processing reduceUnrolling Wrap 8 time (%s): %f ms\n\n", "use device",
@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
   safe_copy_device(hRes, dRes, blocksPerGrid, cudaMemcpyDeviceToHost);
   // checkResult(hostRes, hRes, blocksPerGrid);
   safe_free_device<int*>(2, dA, dRes);
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   timer.Stop();
   time = timer.Elapsed();
   printf("Processing reduceCompleteUroll Wrap 8 time (%s): %f ms\n\n", "use device",
@@ -191,9 +191,23 @@ void printVec(int* vec, const size_t num_element) {
 void initialDeviceMem(int* hA, const size_t numE, int* &dA, int* &dRes,
                       const size_t numRes) {
   //printf("initialDeviceMem numE %s numRes %d\n", numE, numRes);
-  safe_malloc_device<int>(dA, numE);
-  safe_copy_device(dA, hA, numE, cudaMemcpyKind::cudaMemcpyHostToDevice);
-  safe_malloc_device(dRes, numRes);
+  int err = safe_malloc_device<int>(dA, numE);
+  if (is_failed(err)) {
+    printf("cuda malloc error: exit\n");
+    exit(EXIT_FAILURE);
+  }
+  /*CHECK_ERR_CUDA(cudaMemcpy(dA, hA, numE * sizeof(int),
+                                cudaMemcpyKind::cudaMemcpyHostToDevice));*/
+  err =  safe_copy_device<int>(dA, hA, numE, cudaMemcpyKind::cudaMemcpyHostToDevice);
+  if (is_failed(err)) {
+    printf("cuda copy error: exit\n");
+    exit(EXIT_FAILURE);
+  }
+  err =  safe_malloc_device(dRes, numRes);
+  if (is_failed(err)) {
+    printf("cuda malloc error: exit\n");
+    exit(EXIT_FAILURE);
+  }
 }
 
 __global__ void reduceNeighbored(int* vec_a, int* result, const size_t nElem) {
