@@ -155,9 +155,17 @@ __global__ void reduceUnrollingWrap8(int* vec_a, int* result, size_t numElement)
   // convert global data pointer to local data pointer of this block
   int* local = vec_a + blockIdx.x * blockDim.x * 8;
   // unrolling 8
-
-
-  if (idx + blockDim.x < numElement) local[idx] += local[idx + blockDim.x];
+  if (idx + 7 * blockIdx.x < numElement) {
+    int a1 = vec_a[idx];
+    int a2 = vec_a[idx + blockIdx.x];
+    int a3 = vec_a[idx + 2 * blockIdx.x];
+    int a4 = vec_a[idx + 3 * blockIdx.x];
+    int b1 = vec_a[idx + 4 * blockIdx.x];
+    int b2 = vec_a[idx + 5 * blockIdx.x];
+    int b3 = vec_a[idx + 6 * blockIdx.x];
+    int b4 = vec_a[idx + 7 * blockIdx.x];
+    local[idx] = a1 + a2 + a3 + a4 + b1 + b2 + b3 + b4;
+  }
   __syncthreads();
   // in-place reduction in global memory
   for (size_t stride = blockIdx.x / 2; stride > 0; stride >>= 1) {
@@ -165,6 +173,55 @@ __global__ void reduceUnrollingWrap8(int* vec_a, int* result, size_t numElement)
     // synchonize within block
     __syncthreads();
   }
+  // unrolling warp
+  if (tid < 32) {
+    volatile int* vmem = local;
+    vmem[tid] += vmem[tid + 32];
+    vmem[tid] += vmem[tid + 16];
+    vmem[tid] += vmem[tid + 8];
+    vmem[tid] += vmem[tid + 4];
+    vmem[tid] += vmem[tid + 2];
+    vmem[tid] += vmem[tid + 1];
+  }
+  // write result for this block to global mem
+  if (tid == 0) result[blockIdx.x] = local[0];
+}
+
+template <unsigned int iBlockSize>
+__global__ void reduceCompleteUroll(int* vec_a, int* result,
+    size_t numElement) {
+  size_t tid = threadIdx.x;
+  size_t idx = blockIdx.x * blockDim.x * 8 + threadIdx.x;
+  // convert global data pointer to local data pointer of this block
+  int* local = vec_a + blockIdx.x * blockDim.x * 8;
+  // unrolling 8
+  if (idx + 7 * blockIdx.x < numElement) {
+    int a1 = vec_a[idx];
+    int a2 = vec_a[idx + blockIdx.x];
+    int a3 = vec_a[idx + 2 * blockIdx.x];
+    int a4 = vec_a[idx + 3 * blockIdx.x];
+    int b1 = vec_a[idx + 4 * blockIdx.x];
+    int b2 = vec_a[idx + 5 * blockIdx.x];
+    int b3 = vec_a[idx + 6 * blockIdx.x];
+    int b4 = vec_a[idx + 7 * blockIdx.x];
+    local[idx] = a1 + a2 + a3 + a4 + b1 + b2 + b3 + b4;
+  }
+  __syncthreads();
+  // in-place reduction in global memory
+  for (size_t stride = blockIdx.x / 2; stride > 0; stride >>= 1) {
+    if (tid < stride) local[tid] += local[tid + stride];
+    // synchonize within block
+    __syncthreads();
+  }
+  // unrolling warp
+  if (iBlockSize >= 1024 && tid = 512) local[tid] += local[tid + 512];
+  __syncthreads();
+  if (iBlockSize >= 512 && tid = 256) local[tid] += local[tid + 512];
+  __syncthreads();
+  if (iBlockSize >= 256 && tid = 128) local[tid] += local[tid + 128];
+  __syncthreads();
+  if (iBlockSize >= 128 && tid = 64) local[tid] += local[tid + 64];
+  __syncthreads();
   // write result for this block to global mem
   if (tid == 0) result[blockIdx.x] = local[0];
 }
