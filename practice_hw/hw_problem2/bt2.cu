@@ -65,13 +65,81 @@ __global__ void reduceBlksKernel2(int *in, int n, int *out) {
 
 __global__ void reduceBlksKernel3(int *in, int n, int *out) {
   // TODO
-  size_t i = blockIdx.x * blockDim.x * 2;// + threadIdx.x * 2;
+  size_t tid = threadIdx.x;
+  size_t idx = blockIdx.x * blockDim.x * 2 + threadIdx.x * 2;
+  // convert global data pointer to the local pointer of this block
+  int *idata = in + blockIdx.x * blockDim.x * 2;
+  // boundary check
+  if (idx >= n) return;
+
   for (size_t stride = blockDim.x; stride > 0; stride >>= 1) {
-    if ((threadIdx.x % stride) == 0)
-        if (i + stride < n) in[i] += in[i + stride];
+    if (tid < stride)
+      idata[tid] += idata[tid + stride];
     __syncthreads();  // synchonize within each block
   }
-  if (threadIdx.x == 0) out[blockIdx.x] = in[blockIdx.x * blockDim.x * 2];
+  if (threadIdx.x == 0) out[blockIdx.x] = idata[0];
+}
+
+__global__ void reduceUnrolling2(int *in, size_t n, int *out) {
+  // set thread ID
+  size_t tid = threadIdx.x;
+  size_t idx = blockIdx.x * blockDim.x * 2 + threadIdx.x;
+  // convert global data pointer to the local pointer of this block
+  int *idata = in + blockIdx.x * blockDim.x * 2;
+  // unrolling 2 data blocks
+  if (idx + blockDim.x < n) in[idx] += in[idx + blockDim.x];
+  __syncthreads();
+  // in-place reduction in global memory
+  for (size_t stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (tid < stride) {
+      idata[tid] += idata[tid + stride];
+    }
+    // synchronize within threadblock
+    __syncthreads();
+  }
+  // write result for this block to global mem
+  if (tid == 0) out[blockIdx.x] = idata[0];
+}
+
+__global__ void reduceUnrollWarps8(int *in, size_t n, int *out) {
+  // set thread ID
+  size_t tid = threadIdx.x;
+  size_t idx = blockIdx.x * blockDim.x * 8 + threadIdx.x;
+  // convert global data pointer to the local pointer of this block
+  int *idata = in + blockIdx.x * blockDim.x * 8;
+  // unrolling 8
+  if (idx + 7 * blockDim.x < n) {
+    int a1 = in[idx];
+    int a2 = in[idx + blockDim.x];
+    int a3 = in[idx + 2 * blockDim.x];
+    int a4 = in[idx + 3 * blockDim.x];
+    int b1 = in[idx + 4 * blockDim.x];
+    int b2 = in[idx + 5 * blockDim.x];
+    int b3 = in[idx + 6 * blockDim.x];
+    int b4 = in[idx + 7 * blockDim.x];
+    in[idx] = a1 + a2 + a3 + a4 + b1 + b2 + b3 + b4;
+  }
+  __syncthreads();
+  // in-place reduction in global memory
+  for (size_t stride = blockDim.x / 2; stride > 32; stride >>= 1) {
+    if (tid < stride) {
+      idata[tid] += idata[tid + stride];
+    }
+    // synchronize within threadblock
+    __syncthreads();
+  }
+  // unrolling warp
+  if (tid < 32) {
+    volatile int *vmem = idata;
+    vmem[tid] += vmem[tid + 32];
+    vmem[tid] += vmem[tid + 16];
+    vmem[tid] += vmem[tid + 8];
+    vmem[tid] += vmem[tid + 4];
+    vmem[tid] += vmem[tid + 2];
+    vmem[tid] += vmem[tid + 1];
+  }
+  // write result for this block to global mem
+  if (tid == 0) out[blockIdx.x] = idata[0];
 }
 
 int reduce(int const *in, int n, bool useDevice = false,
@@ -86,6 +154,8 @@ int reduce(int const *in, int n, bool useDevice = false,
     int *d_in, *d_out;
     // TODO: Compute gridSize from n and 
     dim3 gridSize(((n + blockSize.x - 1) / blockSize.x)/2 + 1);
+    if (kernelType == 5)
+      gridSize = dim3(((n + blockSize.x - 1) / blockSize.x) / 8 + 1);
     CHECK(cudaMalloc(&d_in, n * sizeof(int)));
     CHECK(cudaMalloc(&d_out, gridSize.x * sizeof(int)));
 
@@ -99,8 +169,13 @@ int reduce(int const *in, int n, bool useDevice = false,
       reduceBlksKernel1<<<gridSize, blockSize>>>(d_in, n, d_out);
     else if (kernelType == 2)
       reduceBlksKernel2<<<gridSize, blockSize>>>(d_in, n, d_out);
-    else
+    else if (kernelType == 3)
       reduceBlksKernel3<<<gridSize, blockSize>>>(d_in, n, d_out);
+    else if (kernelType == 4)
+      reduceUnrolling2<<<gridSize, blockSize>>>(d_in, n, d_out);
+    else if (kernelType == 5) {
+      reduceUnrollWarps8<<<gridSize, blockSize>>>(d_in, n, d_out);
+    } 
     timer.Stop();
     float kernelTime = timer.Elapsed();
     cudaDeviceSynchronize();
@@ -127,7 +202,6 @@ int reduce(int const *in, int n, bool useDevice = false,
     // Free memory
     free(out);
 
-    printf("result: %d\n", result);
     // Print info
     printf("\nKernel %d\n", kernelType);
     printf("Grid size: %d, block size: %d\n", gridSize.x, blockSize.x);
@@ -174,7 +248,6 @@ int main(int argc, char **argv) {
 
   // Reduce NOT using device
   int correctResult = reduce(in, n);
-  printf("correctResult: %d\n", correctResult);
   // Reduce using device, kernel1
   dim3 blockSize(512);  // Default
   if (argc == 2) blockSize.x = atoi(argv[1]);
@@ -188,6 +261,14 @@ int main(int argc, char **argv) {
   // Reduce using device, kernel3
   int result3 = reduce(in, n, true, blockSize, 3);
   checkCorrectness(result3, correctResult);
+
+  // Reduce using device, kernel4 reduceUnrolling2
+  int result4 = reduce(in, n, true, blockSize, 4);
+  checkCorrectness(result4, correctResult);
+
+  // Reduce using device, kernel4 reduceUnrolling8
+  int result5 = reduce(in, n, true, blockSize, 5);
+  checkCorrectness(result5, correctResult);
 
   // Free memories
   free(in);
