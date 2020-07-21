@@ -232,6 +232,7 @@ void printDeviceInfo() {
   printf("GMEM: %lu bytes\n", devProv.totalGlobalMem);
   printf("****************************\n\n");
 }
+
 int main(int argc, char **argv) {
   printDeviceInfo();
 
