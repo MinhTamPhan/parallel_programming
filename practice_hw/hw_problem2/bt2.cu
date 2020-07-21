@@ -42,14 +42,36 @@ struct GpuTimer {
 
 __global__ void reduceBlksKernel1(int *in, int n, int *out) {
   // TODO
+  size_t i = blockIdx.x * blockDim.x * 2 + threadIdx.x * 2;
+  for (size_t stride = 1; stride < 2 * blockDim.x; stride *= 2) {
+    if ((threadIdx.x % stride) == 0)
+      if (i + stride < n) in[i] += in[i + stride];
+    __syncthreads();// synchonize within each block
+  }
+  if (threadIdx.x == 0) out[blockIdx.x] = in[blockIdx.x * blockDim.x * 2];
 }
 
 __global__ void reduceBlksKernel2(int *in, int n, int *out) {
   // TODO
+  size_t numElemsBeforeBlk = blockIdx.x * blockDim.x * 2;
+  for (size_t stride = 1; stride < 2 * blockDim.x; stride *= 2) {
+    size_t i = numElemsBeforeBlk + threadIdx.x * 2 * stride;
+    if (threadIdx.x < blockDim.x / stride)
+      if (i + stride < n) in[i] += in[i + stride];
+    __syncthreads();  // synchonize within each block
+  }
+  if (threadIdx.x == 0) out[blockIdx.x] = in[numElemsBeforeBlk];
 }
 
 __global__ void reduceBlksKernel3(int *in, int n, int *out) {
   // TODO
+  size_t i = blockIdx.x * blockDim.x * 2;// + threadIdx.x * 2;
+  for (size_t stride = blockDim.x; stride > 0; stride >>= 1) {
+    if ((threadIdx.x % stride) == 0)
+        if (i + stride < n) in[i] += in[i + stride];
+    __syncthreads();  // synchonize within each block
+  }
+  if (threadIdx.x == 0) out[blockIdx.x] = in[blockIdx.x * blockDim.x * 2];
 }
 
 int reduce(int const *in, int n, bool useDevice = false,
@@ -62,7 +84,8 @@ int reduce(int const *in, int n, bool useDevice = false,
   {
     // Allocate device memories
     int *d_in, *d_out;
-    dim3 gridSize(1);  // TODO: Compute gridSize from n and blockSize
+    // TODO: Compute gridSize from n and 
+    dim3 gridSize(((n + blockSize.x - 1) / blockSize.x)/2 + 1);
     CHECK(cudaMalloc(&d_in, n * sizeof(int)));
     CHECK(cudaMalloc(&d_out, gridSize.x * sizeof(int)));
 
@@ -93,6 +116,7 @@ int reduce(int const *in, int n, bool useDevice = false,
     CHECK(cudaFree(d_out));
 
     // Host do the rest of the work
+   
     timer.Start();
     result = out[0];
     for (int i = 1; i < gridSize.x; i++) {
@@ -100,10 +124,10 @@ int reduce(int const *in, int n, bool useDevice = false,
     }
     timer.Stop();
     float postKernelTime = timer.Elapsed();
-
     // Free memory
     free(out);
 
+    printf("result: %d\n", result);
     // Print info
     printf("\nKernel %d\n", kernelType);
     printf("Grid size: %d, block size: %d\n", gridSize.x, blockSize.x);
@@ -150,7 +174,7 @@ int main(int argc, char **argv) {
 
   // Reduce NOT using device
   int correctResult = reduce(in, n);
-
+  printf("correctResult: %d\n", correctResult);
   // Reduce using device, kernel1
   dim3 blockSize(512);  // Default
   if (argc == 2) blockSize.x = atoi(argv[1]);
