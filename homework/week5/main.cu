@@ -10,10 +10,15 @@ void queryDevice(cudaDeviceProp& prop);
 float* ramdomInitVec(size_t vec_size);
 void meanTwoVecHost(float* A, float* B, float* C, int nElem);
 bool checkResult(const float* vec_a, const float* vec_b, size_t numElements);
-__global__ void meanTwoVecNoStream(const float* vec_a, const float* vec_b,
-                                   float* vec_c, int numElements);
+__global__ void meanTwoVecStream(const float* vec_a, const float* vec_b,
+                                 float* vec_c, int numElements);
+__global__ void streamOutput(const float* d_out, const float* h_out,
+                             int numElements);
+__global__ void streamCalcMean(const float* d_A, const float* d_B,
+                               const float* d_C, int numElements);
+
 void noStreamImp(float* A, float* B, float* C, int nElem);
-void twoStreamImp(float* A, float* B, float* C, int nElem);
+void twoStreamImp(float* A, float* B, float*& C, int nElem);
 
 int main(int argc, char* argv[]) {
   // srand(0);
@@ -27,13 +32,15 @@ int main(int argc, char* argv[]) {
   B = ramdomInitVec(nElem);
   C = (float*)safe_malloc_host<float>(nElem);
   meanTwoVecHost(A, B, C, nElem);
-
   float* output = (float*)safe_malloc_host<float>(nElem);
+
   noStreamImp(A, B, output, nElem);
   bool isValid = checkResult(C, output, nElem);
   if (isValid)
     printf("calculate mean vector on device no stream: Test PASSED\n");
-  //oneStreamImp(A, B, output, nElem);
+
+  float* output2;
+  twoStreamImp(A, B, output2, nElem);
 
   safe_free_host_ptr<float*>(3, A, B, C);
   safe_free_host_ptr<float*>(1, output);
@@ -86,8 +93,8 @@ bool checkResult(const float* vecA, const float* vecB, size_t numElements) {
   return true;
 }
 
-__global__ void meanTwoVecNoStream(const float* vecA, const float* vecB,
-                                   float* vecC, int numElements) {
+__global__ void meanTwoVecStream(const float* vecA, const float* vecB,
+                                 float* vecC, int numElements) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   if (i < numElements) vecC[i] = (vecA[i] + vecB[i]) / 2;
 }
@@ -95,7 +102,8 @@ __global__ void meanTwoVecNoStream(const float* vecA, const float* vecB,
 void noStreamImp(float* A, float* B, float* C, int nElem) {
   // allocate device
   float *d_A, *d_B, *d_C;
-
+  GpuTimer timer;
+  timer.Start();
   size_t size = nElem * sizeof(float);
   CHECK_ERR_CUDA(cudaMalloc((void**)&d_A, size));
   CHECK_ERR_CUDA(cudaMalloc((void**)&d_B, size));
@@ -105,9 +113,9 @@ void noStreamImp(float* A, float* B, float* C, int nElem) {
   CHECK_ERR_CUDA(cudaMemcpy(d_B, B, size, cudaMemcpyHostToDevice));
   int threadsPerBlock = 512;  // 256;
   int blocksPerGrid = (nElem + threadsPerBlock - 1) / threadsPerBlock;
-  GpuTimer timer;
-  timer.Start();
-  meanTwoVecNoStream<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, nElem);
+
+  // default stream 0
+  meanTwoVecStream<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, nElem);
   cudaError_t cudaStatus = cudaDeviceSynchronize();
   CHECK_ERR_CUDA(cudaMemcpy(C, d_C, size, cudaMemcpyDeviceToHost));
   timer.Stop();
@@ -115,8 +123,45 @@ void noStreamImp(float* A, float* B, float* C, int nElem) {
   printf("execute meanTwoVecNoStream time = %f ms\n", noStreamTime);
 }
 
+void twoStreamImp(float* A, float* B, float*& C, int nElem) {
+  float *d_A, *d_B, *d_C, *t_C;
+  GpuTimer timer;
+  timer.Start();
+  size_t size = nElem * sizeof(float);
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_A, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_B, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_C, size));
+  CHECK_ERR_CUDA(cudaMallocHost((void**)&t_C, size));
 
-void twoStreamImp(float* A, float* B, float* C, int nElem) {
-
-
+  cudaStream_t stream1, stream2;
+  CHECK_ERR_CUDA(cudaStreamCreate(&stream1));
+  CHECK_ERR_CUDA(cudaStreamCreate(&stream2));
+  int stepSize = 512;
+  int threadsPerBlock = 128;  // 256;
+  int blocksPerGrid = stepSize / threadsPerBlock;
+  int nLoop = (nElem + blocksPerGrid - 1) / blocksPerGrid;
+  for (size_t i = 0; i < nLoop; i++) {
+    int offset = stepSize * i;
+    float* stepA = d_A + stepSize * i;
+    float* stepB = d_B + stepSize * i;
+    float* stepC = d_C + stepSize * i;
+    if (stepSize * i > nElem) stepSize = nElem % stepSize;
+    meanTwoVecStream<<<blocksPerGrid, threadsPerBlock, 0, stream1>>>(
+        stepA, stepB, stepC, stepSize);
+    CHECK_ERR_CUDA(cudaStreamSynchronize(stream1));
+    CHECK_ERR_CUDA(cudaMemcpyAsync(&t_C[offset], &d_C[offset],
+                                   stepSize * sizeof(float),
+                                   cudaMemcpyHostToDevice,
+                    stream2));
+  /*  CHECK_ERR_CUDA(cudaMemcpyAsync(&t_C[stepSize * i], &d_C[stepSize * i],
+                                   stepSize * sizeof(float),
+                                   cudaMemcpyDeviceToHost, stream2));*/
+  }
+  CHECK_ERR_CUDA(cudaStreamSynchronize(stream1));
+  // CHECK_ERR_CUDA(cudaStreamSynchronize(stream2));
+  CHECK_ERR_CUDA(cudaStreamDestroy(stream1));
+  CHECK_ERR_CUDA(cudaStreamDestroy(stream2));
+  timer.Stop();
+  float noStreamTime = timer.Elapsed();
+  printf("execute meanTwoVecNoStream time = %f ms\n", noStreamTime);
 }
