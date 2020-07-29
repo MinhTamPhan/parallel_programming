@@ -1,6 +1,7 @@
 #include <time.h>
 
 #include <iostream>
+#include <cuda/std/utility>
 
 #include "helper.cuh"
 using namespace std;
@@ -12,13 +13,10 @@ void meanTwoVecHost(float* A, float* B, float* C, int nElem);
 bool checkResult(const float* vec_a, const float* vec_b, size_t numElements);
 __global__ void meanTwoVecStream(const float* vec_a, const float* vec_b,
                                  float* vec_c, int numElements);
-__global__ void streamOutput(const float* d_out, const float* h_out,
-                             int numElements);
-__global__ void streamCalcMean(const float* d_A, const float* d_B,
-                               const float* d_C, int numElements);
 
 void noStreamImp(float* A, float* B, float* C, int nElem);
 void twoStreamImp(float* A, float* B, float*& C, int nElem);
+void twoStreamImp2(float* A, float* B, float*& C, int nElem);
 
 int main(int argc, char* argv[]) {
   // srand(0);
@@ -36,23 +34,18 @@ int main(int argc, char* argv[]) {
   GpuTimer timer;
   timer.Start();
   noStreamImp(A, B, output, nElem);
-  /*bool isValid = checkResult(C, output, nElem);
-  if (isValid)
-    printf("calculate mean vector on device no stream: Test PASSED\n");*/
   timer.Stop();
   float noStreamTime = timer.Elapsed();
   printf("execute meanTwoVecNoStream time = %f ms\n", noStreamTime);
 
-  float* output2;  //  = (float*)safe_malloc_host<float>(nElem);
+  float* output2 = (float*)safe_malloc_host<float>(nElem);
   twoStreamImp(A, B, output2, nElem);
-  bool isValid = checkResult(C, output2, nElem);
-  /*for (int i = 0; i < nElem; ++i) {
-    printf("wrong at %d\n", output2[i]);
-  }*/
-  if (isValid)
-    printf("calculate mean vector on device no stream: Test PASSED\n");
+
+  float* output3 = (float*)safe_malloc_host<float>(nElem);
+  twoStreamImp2(A, B, output3, nElem);
+  
   safe_free_host_ptr<float*>(3, A, B, C);
-  safe_free_host_ptr<float*>(1, output);
+  safe_free_host_ptr<float*>(3, output, output2, output3);
   return 0;
 }
 
@@ -104,6 +97,7 @@ bool checkResult(const float* vecA, const float* vecB, size_t numElements) {
 
 __global__ void meanTwoVecStream(const float* vecA, const float* vecB,
                                  float* vecC, int numElements) {
+  //cuprintf("meanTwoVecStream %d", vecA[0]);
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   if (i < numElements) vecC[i] = (vecA[i] + vecB[i]) / 2;
 }
@@ -111,7 +105,7 @@ __global__ void meanTwoVecStream(const float* vecA, const float* vecB,
 void noStreamImp(float* A, float* B, float* C, int nElem) {
   // allocate device
   float *d_A, *d_B, *d_C;
- 
+
   size_t size = nElem * sizeof(float);
   CHECK_ERR_CUDA(cudaMalloc((void**)&d_A, size));
   CHECK_ERR_CUDA(cudaMalloc((void**)&d_B, size));
@@ -126,7 +120,9 @@ void noStreamImp(float* A, float* B, float* C, int nElem) {
   meanTwoVecStream<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, nElem);
   cudaError_t cudaStatus = cudaDeviceSynchronize();
   CHECK_ERR_CUDA(cudaMemcpy(C, d_C, size, cudaMemcpyDeviceToHost));
-  
+  CHECK_ERR_CUDA(cudaFree(d_A));
+  CHECK_ERR_CUDA(cudaFree(d_B));
+  CHECK_ERR_CUDA(cudaFree(d_C));
 }
 
 void twoStreamImp(float* A, float* B, float*& C, int nElem) {
@@ -136,11 +132,52 @@ void twoStreamImp(float* A, float* B, float*& C, int nElem) {
   CHECK_ERR_CUDA(cudaMalloc((void**)&d_A, size));
   CHECK_ERR_CUDA(cudaMalloc((void**)&d_B, size));
   CHECK_ERR_CUDA(cudaMalloc((void**)&d_C, size));
-  CHECK_ERR_CUDA(cudaMallocHost((void**)&C, size));
 
   CHECK_ERR_CUDA(cudaMemcpy(d_A, A, size, cudaMemcpyHostToDevice));
   CHECK_ERR_CUDA(cudaMemcpy(d_B, B, size, cudaMemcpyHostToDevice));
+  cudaStream_t stream1, stream2;
+  CHECK_ERR_CUDA(cudaStreamCreate(&stream1));
+  CHECK_ERR_CUDA(cudaStreamCreate(&stream2));
+  int streamSize = 4096;
+  int threadsPerBlock = 2048;
+  int blocksPerGrid = streamSize / threadsPerBlock;
+  int nLoop = (nElem + streamSize - 1) / streamSize;
+  GpuTimer timer;
+  timer.Start();
+  for (size_t i = 0; i < nLoop; i++) {
+    size_t offset = streamSize * i;
+    float* stepA = d_A + offset;
+    float* stepB = d_B + offset;
+    float* stepC = d_C + offset;
+    float* h_C = C + offset;
+    if (offset > nElem) streamSize = nElem % streamSize;
+    meanTwoVecStream<<<streamSize, threadsPerBlock, 0, stream1>>>(
+        stepA, stepB, stepC, streamSize);
+    CHECK_ERR_CUDA(cudaStreamSynchronize(stream1));
+    CHECK_ERR_CUDA(cudaMemcpyAsync(h_C, stepC, streamSize * sizeof(float),
+                                   cudaMemcpyDeviceToHost, stream2));
+  }
+  timer.Stop();
+  CHECK_ERR_CUDA(cudaStreamSynchronize(stream2));
+  CHECK_ERR_CUDA(cudaStreamDestroy(stream1));
+  CHECK_ERR_CUDA(cudaStreamDestroy(stream2));
+  CHECK_ERR_CUDA(cudaFree(d_A));
+  CHECK_ERR_CUDA(cudaFree(d_B));
+  CHECK_ERR_CUDA(cudaFree(d_C));
+  float noStreamTime = timer.Elapsed();
+  printf("execute meanTwoVecNoStream time = %f ms\n", noStreamTime);
+}
 
+void twoStreamImp2(float* A, float* B, float*& C, int nElem) {
+  float *d_A, *d_B, *d_C, *t_C;
+
+  size_t size = nElem * sizeof(float);
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_A, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_B, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_C, size));
+
+  CHECK_ERR_CUDA(cudaMemcpy(d_A, A, size, cudaMemcpyHostToDevice));
+  CHECK_ERR_CUDA(cudaMemcpy(d_B, B, size, cudaMemcpyHostToDevice));
   cudaStream_t stream1, stream2;
   CHECK_ERR_CUDA(cudaStreamCreate(&stream1));
   CHECK_ERR_CUDA(cudaStreamCreate(&stream2));
@@ -159,15 +196,19 @@ void twoStreamImp(float* A, float* B, float*& C, int nElem) {
     if (offset > nElem) streamSize = nElem % streamSize;
     meanTwoVecStream<<<streamSize, threadsPerBlock, 0, stream1>>>(
         stepA, stepB, stepC, streamSize);
-    CHECK_ERR_CUDA(cudaStreamSynchronize(stream1));
+    //CHECK_ERR_CUDA(cudaStreamSynchronize(stream1));
     CHECK_ERR_CUDA(cudaMemcpyAsync(h_C, stepC, streamSize * sizeof(float),
-                        cudaMemcpyDeviceToHost, stream2));
-    CHECK_ERR_CUDA(cudaStreamSynchronize(stream2));
+                                   cudaMemcpyDeviceToHost, stream2));
+    swap(stream1, stream2);
   }
   CHECK_ERR_CUDA(cudaStreamSynchronize(stream2));
+  CHECK_ERR_CUDA(cudaStreamSynchronize(stream1));
+  timer.Stop();
   CHECK_ERR_CUDA(cudaStreamDestroy(stream1));
   CHECK_ERR_CUDA(cudaStreamDestroy(stream2));
-  timer.Stop();
+  CHECK_ERR_CUDA(cudaFree(d_A));
+  CHECK_ERR_CUDA(cudaFree(d_B));
+  CHECK_ERR_CUDA(cudaFree(d_C));
   float noStreamTime = timer.Elapsed();
-  printf("execute meanTwoVecNoStream time = %f ms\n", noStreamTime);
+  printf("execute meanTwoVecTwoStream issue order, time = %f ms\n", noStreamTime);
 }
