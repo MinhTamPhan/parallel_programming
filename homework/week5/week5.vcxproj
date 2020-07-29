@@ -11,10 +11,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="helper.cuh" />
+    <CudaCompile Include="main.cu" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="main.cu" />
+    <ClInclude Include="helper.cuh" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{0AE5F0DB-C85C-460C-8B1F-B84E2EDE9666}</ProjectGuid>
