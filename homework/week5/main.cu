@@ -7,30 +7,36 @@ using namespace std;
 #define EPSILON 1e-5
 
 void queryDevice(cudaDeviceProp& prop);
-float* ramdom_init_vec(size_t vec_size);
-void mean_two_vec_host(float* A, float* B, float* C, int nElem);
-bool check_result(const float* vec_a, const float* vec_b, size_t numElements);
-__global__ void mean_two_vec_no_stream(const float* vec_a, const float* vec_b,
-                                       float* vec_c, int numElements);
+float* ramdomInitVec(size_t vec_size);
+void meanTwoVecHost(float* A, float* B, float* C, int nElem);
+bool checkResult(const float* vec_a, const float* vec_b, size_t numElements);
+__global__ void meanTwoVecNoStream(const float* vec_a, const float* vec_b,
+                                   float* vec_c, int numElements);
+void noStreamImp(float* A, float* B, float* C, int nElem);
+void twoStreamImp(float* A, float* B, float* C, int nElem);
 
 int main(int argc, char* argv[]) {
   // srand(0);
   cudaDeviceProp prop;
   queryDevice(prop);
   int ipower = 10;
-  int kernalType = 0;
-  if (argc > 2) {
-    ipower = atoi(argv[1]);
-    kernalType = atoi(argv[2]);
-  }
+  if (argc > 1) ipower = atoi(argv[1]);
   int nElem = 1 << ipower + 1;
   float *A, *B, *C;
-  A = ramdom_init_vec(nElem);
-  B = ramdom_init_vec(nElem);
+  A = ramdomInitVec(nElem);
+  B = ramdomInitVec(nElem);
   C = (float*)safe_malloc_host<float>(nElem);
-  mean_two_vec_host(A, B, C, nElem);
+  meanTwoVecHost(A, B, C, nElem);
+
+  float* output = (float*)safe_malloc_host<float>(nElem);
+  noStreamImp(A, B, output, nElem);
+  bool isValid = checkResult(C, output, nElem);
+  if (isValid)
+    printf("calculate mean vector on device no stream: Test PASSED\n");
+  //oneStreamImp(A, B, output, nElem);
 
   safe_free_host_ptr<float*>(3, A, B, C);
+  safe_free_host_ptr<float*>(1, output);
   return 0;
 }
 
@@ -60,7 +66,7 @@ void queryDevice(cudaDeviceProp& prop) {
   }
 }
 
-float* ramdom_init_vec(size_t vec_size) {
+float* ramdomInitVec(size_t vec_size) {
   float* vec = (float*)safe_malloc_host<float>(vec_size);
   for (int i = 0; i < vec_size; ++i) {
     vec[i] = rand() / (float)RAND_MAX;
@@ -68,20 +74,49 @@ float* ramdom_init_vec(size_t vec_size) {
   return vec;
 }
 
-void mean_two_vec_host(float* A, float* B, float* C, int numE) {
+void meanTwoVecHost(float* A, float* B, float* C, int numE) {
   for (size_t i = 0; i < numE; i++) {
     C[i] = (A[i] + B[i]) / 2;
   }
 }
 
-bool check_result(const float* vec_a, const float* vec_b, size_t numElements) {
+bool checkResult(const float* vecA, const float* vecB, size_t numElements) {
   for (int i = 0; i < numElements; ++i)
-    if (fabs(vec_a[i] - vec_b[i]) > EPSILON) return false;
+    if (fabs(vecA[i] - vecB[i]) > EPSILON) return false;
   return true;
 }
 
-__global__ void mean_two_vec_no_stream(const float* vec_a, const float* vec_b,
-                                       float* vec_c, int numElements) {
+__global__ void meanTwoVecNoStream(const float* vecA, const float* vecB,
+                                   float* vecC, int numElements) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
-  if (i < numElements) vec_c[i] = (vec_a[i] + vec_b[i]) / 2;
+  if (i < numElements) vecC[i] = (vecA[i] + vecB[i]) / 2;
+}
+
+void noStreamImp(float* A, float* B, float* C, int nElem) {
+  // allocate device
+  float *d_A, *d_B, *d_C;
+
+  size_t size = nElem * sizeof(float);
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_A, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_B, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_C, size));
+
+  CHECK_ERR_CUDA(cudaMemcpy(d_A, A, size, cudaMemcpyHostToDevice));
+  CHECK_ERR_CUDA(cudaMemcpy(d_B, B, size, cudaMemcpyHostToDevice));
+  int threadsPerBlock = 512;  // 256;
+  int blocksPerGrid = (nElem + threadsPerBlock - 1) / threadsPerBlock;
+  GpuTimer timer;
+  timer.Start();
+  meanTwoVecNoStream<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, nElem);
+  cudaError_t cudaStatus = cudaDeviceSynchronize();
+  CHECK_ERR_CUDA(cudaMemcpy(C, d_C, size, cudaMemcpyDeviceToHost));
+  timer.Stop();
+  float noStreamTime = timer.Elapsed();
+  printf("execute meanTwoVecNoStream time = %f ms\n", noStreamTime);
+}
+
+
+void twoStreamImp(float* A, float* B, float* C, int nElem) {
+
+
 }
