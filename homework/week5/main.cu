@@ -212,3 +212,47 @@ void twoStreamImp2(float* A, float* B, float*& C, int nElem) {
   float noStreamTime = timer.Elapsed();
   printf("execute meanTwoVecTwoStream issue order, time = %f ms\n", noStreamTime);
 }
+
+void threeStreamImp(float* A, float* B, float*& C, int nElem) {
+  float *d_A, *d_B, *d_C;
+
+  size_t size = nElem * sizeof(float);
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_A, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_B, size));
+  CHECK_ERR_CUDA(cudaMalloc((void**)&d_C, size));
+
+  CHECK_ERR_CUDA(cudaMemcpy(d_A, A, size, cudaMemcpyHostToDevice));
+  CHECK_ERR_CUDA(cudaMemcpy(d_B, B, size, cudaMemcpyHostToDevice));
+  cudaStream_t stream1, stream2, stream3;
+  CHECK_ERR_CUDA(cudaStreamCreate(&stream1));
+  CHECK_ERR_CUDA(cudaStreamCreate(&stream2));
+  CHECK_ERR_CUDA(cudaStreamCreate(&stream3));
+  int streamSize = 4096;
+  int threadsPerBlock = 2048;
+  int blocksPerGrid = streamSize / threadsPerBlock;
+  int nLoop = (nElem + streamSize - 1) / streamSize;
+  GpuTimer timer;
+  timer.Start();
+  for (size_t i = 0; i < nLoop; i++) {
+    size_t offset = streamSize * i;
+    float* stepA = d_A + offset;
+    float* stepB = d_B + offset;
+    float* stepC = d_C + offset;
+    float* h_C = C + offset;
+    if (offset > nElem) streamSize = nElem % streamSize;
+    meanTwoVecStream<<<streamSize, threadsPerBlock, 0, stream1>>>(
+        stepA, stepB, stepC, streamSize);
+    CHECK_ERR_CUDA(cudaStreamSynchronize(stream1));
+    CHECK_ERR_CUDA(cudaMemcpyAsync(h_C, stepC, streamSize * sizeof(float),
+                                   cudaMemcpyDeviceToHost, stream2));
+  }
+  timer.Stop();
+  CHECK_ERR_CUDA(cudaStreamSynchronize(stream2));
+  CHECK_ERR_CUDA(cudaStreamDestroy(stream1));
+  CHECK_ERR_CUDA(cudaStreamDestroy(stream2));
+  CHECK_ERR_CUDA(cudaFree(d_A));
+  CHECK_ERR_CUDA(cudaFree(d_B));
+  CHECK_ERR_CUDA(cudaFree(d_C));
+  float noStreamTime = timer.Elapsed();
+  printf("execute meanTwoVecNoStream time = %f ms\n", noStreamTime);
+}
