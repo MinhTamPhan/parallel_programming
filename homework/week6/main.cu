@@ -37,13 +37,27 @@ int main(int argc, char *argv[]) {
       // Generate a random integer in [0, 255]
       in[i] = (int)(rand() & 0xFF);
     }
+    GpuTimer timer;
+    timer.Start();
     int *d_in, *d_out;
-    dim3 blockSize(512);
+    dim3 blockSize(256);
     dim3 gridSize(((nElem + blockSize.x - 1) / blockSize.x) / 2 + 1);
-    CHECK_ERR_CUDA(cudaMalloc(&d_in, nElem * sizeof(int)));
+    CHECK_ERR_CUDA(cudaMalloc(&d_in, nBytes));
     CHECK_ERR_CUDA(cudaMalloc(&d_out, gridSize.x * sizeof(int)));
-    CHECK_ERR_CUDA(
-        cudaMemcpy(d_in, in, nElem * sizeof(int), cudaMemcpyHostToDevice));
+    CHECK_ERR_CUDA(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
+    reduceOnDevice4<<<gridSize, blockSize>>>(d_in, d_out, nElem);
+    cudaDeviceSynchronize();
+    CHECK_ERR_CUDA(cudaGetLastError());
+    int *out = (int *)malloc(gridSize.x * sizeof(int));
+    CHECK_ERR_CUDA(cudaMemcpy(out, d_out, gridSize.x * sizeof(int),
+                     cudaMemcpyDeviceToHost));
+    CHECK_ERR_CUDA(cudaFree(d_in));
+    CHECK_ERR_CUDA(cudaFree(d_out));
+    timer.Stop();
+    float kernelTime = timer.Elapsed();
+    printf("Launch the kernel reduceOnDevice4. exec time: %f ms\n", kernelTime);
+    free(in);
+    free(out);
   }
   return 0;
 }
@@ -111,6 +125,10 @@ void doConvolution(int type) {
   // Free device memories
   cudaFree(d_in);
   cudaFree(d_out);
+
+  free(in);
+  free(out);
+  free(flt);
 }
 
 __global__ void reduceOnDevice4(int *in, int *out, int n) {
