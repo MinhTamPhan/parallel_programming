@@ -134,10 +134,42 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
   int inPixelsC = (ix - filterWidth / 2) + iy;
   inPixelsR = min(height - 1, max(0, inPixelsR));
   inPixelsC = min(width - 1, max(0, inPixelsC));
-  int s_index = iy * (blockDim.x + filterWidth) + (filterWidth / 2);
-  s_inPixels[iy * (blockDim.x + filterWidth) + ix] =
-      inPixels[inPixelsR * width + inPixelsC];
-
+  int s_index = iy * (blockDim.x + filterWidth) + ix;
+  // s_index = max(0, s_index);
+  s_inPixels[s_index] = inPixels[inPixelsR * width + inPixelsC];
+  if (ix / filterWidth == 0) {
+    inPixelsC = min(width - 1, max(0, inPixelsC + ix));
+    s_inPixels[s_index + ix] = inPixels[inPixelsR * width + inPixelsC];
+  }
+  if (iy / filterWidth == 0) {
+    inPixelsR = min(height - 1, max(0, inPixelsR + iy));
+    s_inPixels[s_index + ix] = inPixels[inPixelsR * width + inPixelsC];
+  }
+  if (ix / filterWidth == 1 && iy / filterWidth == 1) {
+    inPixelsC = min(width - 1, max(0, inPixelsC + ix));
+    inPixelsR = min(height - 1, max(0, inPixelsR + iy));
+    s_inPixels[s_index + ix] = inPixels[inPixelsR * width + inPixelsC];
+  }
+  __syncthreads();
+  if (ix < width && iy < height) {
+    float3 outPixel = make_float3(0, 0, 0);
+    for (int filterR = 0; filterR < filterWidth; filterR++) {
+      int inPixelsR = (iy - filterWidth / 2) + filterR;
+      for (int filterC = 0; filterC < filterWidth; filterC++) {
+        float filterVal = filter[filterR * filterWidth + filterC];
+        // printf("filterVal = %.4f\n", filterVal);
+        int inPixelsC = (ix - filterWidth / 2) + filterC;
+        inPixelsR = min(height - 1, max(0, inPixelsR));
+        inPixelsC = min(width - 1, max(0, inPixelsC));
+        uchar3 inPixel = inPixels[inPixelsR * width + inPixelsC];
+        outPixel.x += (filterVal * inPixel.x);
+        outPixel.y += (filterVal * inPixel.y);
+        outPixel.z += (filterVal * inPixel.z);
+      }
+    }
+    outPixels[iy * width + ix] =
+        make_uchar3(outPixel.x, outPixel.y, outPixel.z);
+  }
   /*int iR = blockIdx.x * blockDim.x + threadIdx.y;
   int iC = blockIdx.y * blockDim.y + threadIdx.x;
   s_blkData[threadIdx.y][threadIdx.x] = iMatrix[iR * w + iC];
