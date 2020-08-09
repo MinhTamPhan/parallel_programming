@@ -1,4 +1,4 @@
-#include <stdint.h>
+﻿#include <stdint.h>
 #include <stdio.h>
 
 #include "cuda_runtime_api.h"
@@ -98,12 +98,50 @@ __global__ void blurImgKernel1(uchar3 *inPixels, int width, int height,
                                float *filter, int filterWidth,
                                uchar3 *outPixels) {
   // TODO
+  int ix = threadIdx.x + blockIdx.x * blockDim.x;
+  int iy = threadIdx.y + blockIdx.y * blockDim.y;
+
+  if (ix < width && iy < height) {
+    float3 outPixel = make_float3(0, 0, 0);
+    for (int filterR = 0; filterR < filterWidth; filterR++) {
+      int inPixelsR = (iy - filterWidth / 2) + filterR;
+      for (int filterC = 0; filterC < filterWidth; filterC++) {
+        float filterVal = filter[filterR * filterWidth + filterC];
+        // printf("filterVal = %.4f\n", filterVal);
+        int inPixelsC = (ix - filterWidth / 2) + filterC;
+        inPixelsR = min(height - 1, max(0, inPixelsR));
+        inPixelsC = min(width - 1, max(0, inPixelsC));
+        uchar3 inPixel = inPixels[inPixelsR * width + inPixelsC];
+        outPixel.x += (filterVal * inPixel.x);
+        outPixel.y += (filterVal * inPixel.y);
+        outPixel.z += (filterVal * inPixel.z);
+      }
+    }
+    outPixels[iy * width + ix] =
+        make_uchar3(outPixel.x, outPixel.y, outPixel.z);
+  }
 }
 
 __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
                                float *filter, int filterWidth,
                                uchar3 *outPixels) {
   // TODO
+  extern __shared__ uchar3 s_inPixels[];
+  int ix = threadIdx.x + blockIdx.x * blockDim.x;
+  int iy = threadIdx.y + blockIdx.y * blockDim.y;
+  // mỗi thread copy 1 phần tử trong inPixels
+  int inPixelsR = (iy - filterWidth / 2) + ix;
+  int inPixelsC = (ix - filterWidth / 2) + iy;
+  inPixelsR = min(height - 1, max(0, inPixelsR));
+  inPixelsC = min(width - 1, max(0, inPixelsC));
+  int s_index = iy * (blockDim.x + filterWidth) + (filterWidth / 2);
+  s_inPixels[iy * (blockDim.x + filterWidth) + ix] =
+      inPixels[inPixelsR * width + inPixelsC];
+
+  /*int iR = blockIdx.x * blockDim.x + threadIdx.y;
+  int iC = blockIdx.y * blockDim.y + threadIdx.x;
+  s_blkData[threadIdx.y][threadIdx.x] = iMatrix[iR * w + iC];
+  __syncthreads();*/
 }
 
 __global__ void blurImgKernel3(uchar3 *inPixels, int width, int height,
@@ -158,6 +196,7 @@ void blurImg(uchar3 *inPixels, int width, int height, float *filter,
     } else {
       // TODO: copy data from "filter" (on host) to "dc_filter" (on CMEM of
       // device)
+      cudaMemcpyToSymbol(dc_filter, filter, filterSize, cudaMemcpyHostToDevice);
     }
 
     // Call kernel
@@ -168,10 +207,14 @@ void blurImg(uchar3 *inPixels, int width, int height, float *filter,
     timer.Start();
     if (kernelType == 1) {
       // TODO: call blurImgKernel1
-
+      blurImgKernel1<<<gridSize, blockSize>>>(
+          d_inPixels, width, height, d_filter, filterWidth, d_outPixels);
     } else if (kernelType == 2) {
       // TODO: call blurImgKernel2
-
+      size_t s_byte =
+          (blockSize.x + filterWidth) * filterWidth * sizeof(uchar3);
+      blurImgKernel2<<<gridSize, blockSize, s_byte>>>(
+          d_inPixels, width, height, d_filter, filterWidth, d_outPixels);
     } else {
       // TODO: call blurImgKernel3
     }
