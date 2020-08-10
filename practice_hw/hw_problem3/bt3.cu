@@ -135,25 +135,20 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
   inPixelsR = min(height - 1, max(0, inPixelsR));
   inPixelsC = min(width - 1, max(0, inPixelsC));
   if (ix < width && iy < height) {
-    int s_index = threadIdx.y * (blockDim.x + filterWidth) + threadIdx.x;
+    int s_index = threadIdx.y * (blockDim.x * 2) + threadIdx.x;
     s_inPixels[s_index] = inPixels[inPixelsR * width + inPixelsC];
-    int ex_x = threadIdx.x % filterWidth;
-    int ex_y = threadIdx.y % filterWidth;
-    if (threadIdx.x / filterWidth == 0) {
-      int ex_idx =
-          (threadIdx.y + ex_y) * (blockDim.x + filterWidth) + blockDim.x + ex_x;
-      int ex_inPixelsR = min(height - 1, inPixelsR + ex_y);
-      int ex_inPixelsC = min(width - 1, inPixelsC + ex_x);
-      s_inPixels[ex_idx] = inPixels[ex_inPixelsR * width + ex_inPixelsC];
-    }
-    
+    s_inPixels[s_index + blockDim.x] =
+        inPixels[inPixelsR * width + min(width - 1, inPixelsC + blockDim.x)];
+    s_inPixels[(threadIdx.y + blockDim.x) * blockDim.x + threadIdx.x] =
+        inPixels[(inPixelsR + blockDim.y) * width + inPixelsC];
     __syncthreads();
     float3 outPixel = make_float3(0, 0, 0);
     for (int filterR = 0; filterR < filterWidth; filterR++) {
       for (int filterC = 0; filterC < filterWidth; filterC++) {
         float filterVal = filter[filterR * filterWidth + filterC];
         uchar3 inPixel =
-            s_inPixels[filterR * (blockDim.x + filterWidth) + filterC];
+            s_inPixels[(threadIdx.y + filterR) * (blockDim.x * 2) +
+                       (threadIdx.x + filterC)];
         outPixel.x += (filterVal * inPixel.x);
         outPixel.y += (filterVal * inPixel.y);
         outPixel.z += (filterVal * inPixel.z);
@@ -231,8 +226,7 @@ void blurImg(uchar3 *inPixels, int width, int height, float *filter,
           d_inPixels, width, height, d_filter, filterWidth, d_outPixels);
     } else if (kernelType == 2) {
       // TODO: call blurImgKernel2
-      size_t s_byte = (blockSize.y + filterWidth) *
-                      (blockSize.x + filterWidth) * sizeof(uchar3);
+      size_t s_byte = blockSize.y * blockSize.x * 4 * sizeof(uchar3);
       blurImgKernel2<<<gridSize, blockSize, s_byte>>>(
           d_inPixels, width, height, d_filter, filterWidth, d_outPixels);
     } else {
