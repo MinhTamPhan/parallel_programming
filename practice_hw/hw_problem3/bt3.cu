@@ -134,34 +134,67 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
   int inPixelsC = (ix - filterWidth / 2) + iy;
   inPixelsR = min(height - 1, max(0, inPixelsR));
   inPixelsC = min(width - 1, max(0, inPixelsC));
+  if (blockIdx.x != 0 && blockIdx.y != 0) return;
   if (ix < width && iy < height) {
-    int s_index = threadIdx.y * (blockDim.x * 2) + threadIdx.x;
-    s_inPixels[s_index] = inPixels[inPixelsR * width + inPixelsC];
-    s_inPixels[s_index + blockDim.x] =
+    int s_index = threadIdx.y * blockDim.x + threadIdx.x;
+    s_inPixels[threadIdx.y * (blockIdx.x + filterWidth) + threadIdx.x] =
+        inPixels[inPixelsR * width + inPixelsC];
+    /*outPixels[s_index + blockDim.x] =
         inPixels[inPixelsR * width + min(width - 1, inPixelsC + blockDim.x)];
-    s_inPixels[(threadIdx.y + blockDim.x) * blockDim.x + threadIdx.x] =
-        inPixels[(inPixelsR + blockDim.y) * width + inPixelsC];
+    outPixels[(threadIdx.y + blockDim.x) * blockDim.x + threadIdx.x] =
+        inPixels[(inPixelsR + blockDim.y) * width + inPixelsC];*/
     __syncthreads();
-    float3 outPixel = make_float3(0, 0, 0);
-    for (int filterR = 0; filterR < filterWidth; filterR++) {
-      for (int filterC = 0; filterC < filterWidth; filterC++) {
-        float filterVal = filter[filterR * filterWidth + filterC];
-        uchar3 inPixel =
-            s_inPixels[(threadIdx.y + filterR) * (blockDim.x * 2) +
-                       (threadIdx.x + filterC)];
-        outPixel.x += (filterVal * inPixel.x);
-        outPixel.y += (filterVal * inPixel.y);
-        outPixel.z += (filterVal * inPixel.z);
-      }
+    if (threadIdx.x == 0) {
+    
     }
-    outPixels[iy * width + ix] =
-        make_uchar3(outPixel.x, outPixel.y, outPixel.z);
+    /* int s_index = threadIdx.y * (blockDim.x * 2) + threadIdx.x;
+     s_inPixels[s_index] = inPixels[inPixelsR * width + inPixelsC];
+     s_inPixels[s_index + blockDim.x] =
+         inPixels[inPixelsR * width + min(width - 1, inPixelsC + blockDim.x)];
+     s_inPixels[(threadIdx.y + blockDim.x) * blockDim.x + threadIdx.x] =
+         inPixels[(inPixelsR + blockDim.y) * width + inPixelsC];
+     __syncthreads();
+     float3 outPixel = make_float3(0, 0, 0);
+     for (int filterR = 0; filterR < filterWidth; filterR++) {
+       for (int filterC = 0; filterC < filterWidth; filterC++) {
+         float filterVal = filter[filterR * filterWidth + filterC];
+         uchar3 inPixel =
+             s_inPixels[(threadIdx.y + filterR) * (blockDim.x * 2) +
+                        (threadIdx.x + filterC)];
+         outPixel.x += (filterVal * inPixel.x);
+         outPixel.y += (filterVal * inPixel.y);
+         outPixel.z += (filterVal * inPixel.z);
+       }
+     }
+     outPixels[iy * width + ix] =
+         make_uchar3(outPixel.x, outPixel.y, outPixel.z);*/
   }
 }
 
 __global__ void blurImgKernel3(uchar3 *inPixels, int width, int height,
                                int filterWidth, uchar3 *outPixels) {
   // TODO
+}
+
+void print_test(uchar3 *d_inPixels, uchar3 *d_outPixels, int block) {
+  float err = 0;
+  for (size_t i = 0; i < 32; i++) {
+    for (size_t j = 0; j < 32; j++) {
+      uchar3 val = d_outPixels[i * 512 + (block * 32) + j];
+      uchar3 val2 = d_outPixels[i * 512 + (block * 32) + j];
+      err += abs(val.x - val2.x) + abs(val.y - val2.y) + abs(val.z - val2.z);
+      
+      //printf("(%d, %d, %d)\t", val.x, val.y, val.z);
+    }
+  }
+  printf("print_test %f\n\n\n", err / 3);
+  /*for (size_t i = 0; i < 32; i++) {
+    for (size_t j = 0; j < 32; j++) {
+      uchar3 val = d_outPixels[i * 512 + (block * 32) + j];
+      printf("(%d, %d, %d)\t", val.x, val.y, val.z);
+    }
+    printf("\n");
+  }*/
 }
 
 void blurImg(uchar3 *inPixels, int width, int height, float *filter,
@@ -336,6 +369,8 @@ int main(int argc, char **argv) {
   uchar3 *outPixels2 = (uchar3 *)malloc(width * height * sizeof(uchar3));
   blurImg(inPixels, width, height, filter, filterWidth, outPixels2, true,
           blockSize, 2);
+  // todo remove
+  print_test(inPixels, outPixels2, 0);
   printError(outPixels2, correctOutPixels, width, height);
 
   // Blur input image using device, kernel 3
