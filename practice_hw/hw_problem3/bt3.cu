@@ -134,24 +134,50 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
   int inPixelsC = (ix - filterWidth / 2);
   inPixelsR = min(height - 1, max(0, inPixelsR));
   inPixelsC = min(width - 1, max(0, inPixelsC));
-  if (blockIdx.x != 0 || blockIdx.y != 0) return;
+  // if (blockIdx.x != 0 || blockIdx.y != 0) return;
   if (ix < width && iy < height) {
-    int s_index = threadIdx.y * (blockDim.x + filterWidth ) + threadIdx.x;
+    int s_index = threadIdx.y * (blockDim.x + filterWidth) + threadIdx.x;
     s_inPixels[s_index] = inPixels[inPixelsR * width + inPixelsC];
     if (threadIdx.x / filterWidth == 0) {
-      int inPixelsC2 =
-          min(width - 1, inPixelsC + blockDim.x + threadIdx.x - filterWidth / 2);
-      
-      s_inPixels[s_index +
-                 blockDim.x] = inPixels[inPixelsR * width + inPixelsC2];
+      int x_index = inPixelsC + blockDim.x + threadIdx.x - filterWidth / 2;
+      int inPixelsC2 = min(width - 1, x_index);
+      s_inPixels[s_index + blockDim.x] =
+          inPixels[inPixelsR * width + inPixelsC2];
+    }
+    if (threadIdx.y / filterWidth == 0) {
+      int s_index2 = (threadIdx.y + blockDim.y) * (blockDim.x + filterWidth) + threadIdx.x;
+      int y_index = inPixelsR + blockDim.y + threadIdx.y - filterWidth / 2;
+      int inPixelsR2 = min(height - 1, y_index);
+      s_inPixels[s_index2] = inPixels[inPixelsR2 * width + inPixelsC];
+    }
+
+    if (threadIdx.y / filterWidth == 1 && threadIdx.x / filterWidth == 1) {
+      int s_index2 =
+          (threadIdx.y + blockDim.y) * (blockDim.x + filterWidth) + threadIdx.x;
+      int y_index = inPixelsR + blockDim.y + threadIdx.y - filterWidth / 2;
+      int inPixelsR2 = min(height - 1, y_index);
+      s_inPixels[s_index2] = inPixels[inPixelsR2 * width + inPixelsC];
     }
     /*outPixels[s_index + blockDim.x] =
         inPixels[inPixelsR * width + min(width - 1, inPixelsC + blockDim.x)];
     outPixels[(threadIdx.y + blockDim.x) * blockDim.x + threadIdx.x] =
         inPixels[(inPixelsR + blockDim.y) * width + inPixelsC];*/
     __syncthreads();
+    /*float3 outPixel = make_float3(0, 0, 0);
+    for (int filterR = 0; filterR < filterWidth; filterR++) {
+      for (int filterC = 0; filterC < filterWidth; filterC++) {
+        float filterVal = filter[filterR * filterWidth + filterC];
+        uchar3 inPixel = s_inPixels[(threadIdx.y + filterR) * (blockDim.x) +
+                                    (threadIdx.x + filterC)];
+        outPixel.x += (filterVal * inPixel.x);
+        outPixel.y += (filterVal * inPixel.y);
+        outPixel.z += (filterVal * inPixel.z);
+      }
+    }
+    outPixels[iy * width + ix] =
+        make_uchar3(outPixel.x, outPixel.y, outPixel.z);*/
+
     if (threadIdx.x == 0 && threadIdx.y == 0) {
-      float err = 0;
       for (size_t i = 0; i < 32; i++) {
         for (size_t j = 0; j < 32; j++) {
           uchar3 val = inPixels[i * width + j];
@@ -160,7 +186,7 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
           printf("(%d, %d, %d)\t", val.x, val.y, val.z);
           printf("(%d, %d, %d)\n", val2.x, val2.y, val2.z);
         }
-        //return;
+        // return;
         printf("\n\n\n");
       }
       return;
@@ -278,8 +304,8 @@ void blurImg(uchar3 *inPixels, int width, int height, float *filter,
           d_inPixels, width, height, d_filter, filterWidth, d_outPixels);
     } else if (kernelType == 2) {
       // TODO: call blurImgKernel2
-      size_t s_byte = (blockSize.y + filterWidth) * (blockSize.x +
-                      filterWidth) * sizeof(uchar3);
+      size_t s_byte = (blockSize.y + filterWidth) *
+                      (blockSize.x + filterWidth) * sizeof(uchar3);
       blurImgKernel2<<<gridSize, blockSize, s_byte>>>(
           d_inPixels, width, height, d_filter, filterWidth, d_outPixels);
     } else {
