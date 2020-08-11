@@ -156,7 +156,7 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
       s_inPixels[s_index2] = inPixels[inPixelsR2 * width + inPixelsC];
     }
     // các threadIdx.x, threadIdx.y từ 0, filterWidth phụ trách copy thêm 1 phần
-    // filterWidth xuống dưới
+    // filterWidth xuống dưới 
     if (threadIdx.x / filterWidth == 0 && threadIdx.y / filterWidth == 0) {
       int s_index2 = (threadIdx.y + blockDim.y) * (blockDim.x + filterWidth) +
                      blockDim.x + threadIdx.x;
