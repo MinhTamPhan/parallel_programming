@@ -129,9 +129,9 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
   extern __shared__ uchar3 s_inPixels[];
   int ix = threadIdx.x + blockIdx.x * blockDim.x;
   int iy = threadIdx.y + blockIdx.y * blockDim.y;
-
-  int inPixelsR = (iy - filterWidth / 2);
-  int inPixelsC = (ix - filterWidth / 2);
+  //filterWidth / 2
+  int inPixelsR = (iy - 4);
+  int inPixelsC = (ix - 4);
   inPixelsR = min(height - 1, max(0, inPixelsR));
   inPixelsC = min(width - 1, max(0, inPixelsC));
   if (ix < width && iy < height) {
@@ -141,7 +141,8 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
     // các threadIdx.x từ 0, filterWidth phụ trách copy thêm 1 phần filterWidth
     // qua bên phải 1 đoạn blockDim.x
     if (threadIdx.x / filterWidth == 0) {
-      int x_index = inPixelsC + blockDim.x + threadIdx.x - filterWidth / 2;
+      int x_index = inPixelsC + blockDim.x + threadIdx.x - 4;
+      //filterWidth / 2;
       int inPixelsC2 = min(width - 1,  x_index);
       s_inPixels[s_index + blockDim.x] =
           inPixels[inPixelsR * width + inPixelsC2];
@@ -151,7 +152,8 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
     if (threadIdx.y / filterWidth == 0) {
       int s_index2 =
           (threadIdx.y + blockDim.y) * (blockDim.x + filterWidth) + threadIdx.x;
-      int y_index = inPixelsR + blockDim.y + threadIdx.y - filterWidth / 2;
+      int y_index = inPixelsR + blockDim.y + threadIdx.y - 4;
+      //filterWidth / 2;
       int inPixelsR2 = min(height - 1, y_index);
       s_inPixels[s_index2] = inPixels[inPixelsR2 * width + inPixelsC];
     }
@@ -161,9 +163,11 @@ __global__ void blurImgKernel2(uchar3 *inPixels, int width, int height,
       int s_index2 = (threadIdx.y + blockDim.y) * (blockDim.x + filterWidth) +
                      blockDim.x + threadIdx.x;
 
-      int x_index = inPixelsC + blockDim.x + threadIdx.x - (filterWidth / 2);
+      int x_index = inPixelsC + blockDim.x + threadIdx.x - 4;
+      //(filterWidth / 2);
       int inPixelsC2 = min(width - 1, x_index);
-      int y_index = inPixelsR + blockDim.y + threadIdx.y - (filterWidth / 2);
+      int y_index = inPixelsR + blockDim.y + threadIdx.y - 5;
+      //(filterWidth / 2);
       int inPixelsR2 = min(height - 1, y_index);
       s_inPixels[s_index2] = inPixels[inPixelsR2 * width + inPixelsC2];
     }
@@ -355,6 +359,25 @@ void printError(uchar3 *deviceResult, uchar3 *hostResult, int width,
   float err = computeError(deviceResult, hostResult, width * height);
   printf("Error: %f\n", err);
 }
+// remote
+float _computeError(uchar3 *a1, uchar3 *a2, int n) {
+  float err = 0;
+  for (int i = 0; i < n; i++) {
+    err += abs((int)a1[i].x - (int)a2[i].x);
+    err += abs((int)a1[i].y - (int)a2[i].y);
+    err += abs((int)a1[i].z - (int)a2[i].z);
+    if (err != 0) printf("%d \t", i);
+    //if (n > 32 * 512) break;
+  }
+  err /= (n * 3);
+  return err;
+}
+
+void _printError(uchar3 *deviceResult, uchar3 *hostResult, int width,
+                int height) {
+  float err = _computeError(deviceResult, hostResult, width * height);
+  printf("Error: %f\n", err);
+}
 
 char *concatStr(const char *s1, const char *s2) {
   char *result = (char *)malloc(strlen(s1) + strlen(s2) + 1);
@@ -426,8 +449,8 @@ int main(int argc, char **argv) {
           blockSize, 2);
   // todo remove
   // print_test(inPixels, outPixels2, 0);
+  _printError(outPixels2, correctOutPixels, width, height);
   printError(outPixels2, correctOutPixels, width, height);
-
   // Blur input image using device, kernel 3
   uchar3 *outPixels3 = (uchar3 *)malloc(width * height * sizeof(uchar3));
   blurImg(inPixels, width, height, filter, filterWidth, outPixels3, true,
