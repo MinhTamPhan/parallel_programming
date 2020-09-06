@@ -361,3 +361,12 @@ FodyWeavers.xsd
 
 .idea/
 cmake-build-debug/
+
+*.exe
+*.exp
+*.lib
+*.sln
+*.user
+*.vcxproj
+homework/*
+practice_hw/*
