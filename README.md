@@ -1,1 +1,20 @@
 # parallel_programming
+
+# Hướng đẫn
+* Tuần này cố gắng cài lại và hiểu các bài toán scan và tính histogram
+    * Nên xem lại video của thầy để làm thêm các cải tiến.
+    * Cố gắng cài lại thuật toán sort của thầy chạy trên host. Xem lại bài giảng
+
+* Cấu trúc thư mục:
+    * Khi code 1 bài mới ví dụ, scan. thì tạo 1 file `scan.cu`, `hits.cu` ... sau đó include ```#include "helper.cuh"``` vào file mới trong này chứ hàm `CHECK` để check `GPU` và struct `GpuTimer`. Sau đó code các hàm cần thiết không code hàm main vào các file này.
+    * Sau đó vào thư mục test. tạo file test tương tự ví dụ `scan_test.cu` sau đó code lại hàm main nhớ include các file cần thiết ví dụ `#include "../src/scan.cu"`
+
+* Để chạy code này cần upload các file trong thư mục `src` vào thực mục `src`, `testing` tạo trên colab và upload toàn bộ các file trong thư mục đó. ví dụ như hình sau:
+
+![hinh 1](./colab.png)
+
+- sau đó chạy lệnh sau trên colab
+
+`!nvcc testing/scan_test.cu && ./a.out`
+
+có thể tham khảo file [example](./example.ipynb)
