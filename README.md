@@ -3,7 +3,15 @@
 # Hướng đẫn
 * Tuần này cố gắng cài lại và hiểu các bài toán scan và tính histogram
     * Nên xem lại video của thầy để làm thêm các cải tiến.
-    * Cố gắng cài lại thuật toán sort của thầy chạy trên host. Xem lại bài giảng
+    * Cố gắng cài lại thuật toán sort của thầy chạy trên host. Xem lại bài giảng.
+    * Có thời gian đọc thêm các bài báo ở thư mục papers
+
+* Một số link tham khảo:
+    * `https://github.com/mark-poscablo/gpu-radix-sort/tree/master/radix_sort`
+    * `https://github.com/moderngpu/moderngpu/tree/master/src/moderngpu`
+    * `https://github.com/NVlabs/cub`
+    * `https://developer.nvidia.com/gpugems/gpugems2/part-vi-simulation-and-numerical-algorithms/chapter-46-improved-gpu-sorting`
+    * `https://github.com/deeperlearning/professional-cuda-c-programming`
 
 * Cấu trúc thư mục:
     * Khi code 1 bài mới ví dụ, scan. thì tạo 1 file `scan.cu`, `hits.cu` ... sau đó include ```#include "helper.cuh"``` vào file mới trong này chứ hàm `CHECK` để check `GPU` và struct `GpuTimer`. Sau đó code các hàm cần thiết không code hàm main vào các file này.
@@ -18,3 +26,4 @@
 `!nvcc testing/scan_test.cu && ./a.out`
 
 có thể tham khảo file [example](./example.ipynb)
+
