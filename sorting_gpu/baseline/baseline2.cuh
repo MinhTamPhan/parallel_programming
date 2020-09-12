@@ -1,7 +1,3 @@
-#include <stdio.h>
-#include <stdint.h>
-
-#include "../src/helper.cuh"
 // Sequential Radix Sort
 void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
@@ -12,7 +8,6 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
     int * histScan = (int *)malloc(nBins * sizeof(int));
 
     uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
-    uint32_t * originalSrc = src; // To free memory later
     memcpy(src, in, n * sizeof(uint32_t));
     uint32_t * dst = out;
 
@@ -24,25 +19,24 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
         // TODO: Compute histogram
         memset(hist, 0, nBins * sizeof(int));
         int bin;
-        for (int i = 0; i < n; i++) {
-            // bin = (src[i] >> bit) & (nBins - 1);
+        for(int i = 0; i < n; i++) {
             bin = src[i] / (1 << (bit)) % (1 << nBits);
-            hist[bin]++;
+            //bin == (src[i] >> bit) & (nBins - 1);
+            hist[bin] += 1;
         }
-
         // TODO: Scan histogram (exclusively)
+        //memset(histScan, 0, nBins * sizeof(int));
         histScan[0] = 0;
-        for (int bin = 1; bin < nBins; bin++)
-            histScan[bin] = histScan[bin - 1] + hist[bin - 1];
-        
+        for(int i = 1; i < nBins; i++)
+            histScan[i] = hist[i - 1] + histScan[i - 1];
+
         // TODO: Scatter elements to correct locations
         for (int i = 0; i < n; i++) {
-            // bin = (src[i] >> bit) & (nBins - 1);
             bin = src[i] / (1 << (bit)) % (1 << nBits);
+            //bin = (src[i] >> bit) & (nBins - 1);
             dst[histScan[bin]] = src[i];
             histScan[bin]++;
         }
-
         // Swap src and dst
         uint32_t * temp = src;
         src = dst;
@@ -51,15 +45,15 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
     // Copy result to out
     memcpy(out, src, n * sizeof(uint32_t)); 
+}
 
-    // Free memory
-    free(originalSrc);
-    free(hist);
-    free(histScan);
+// Parallel Radix Sort
+void sortByDevice(const uint32_t * in, int n, uint32_t * out, int blockSize) {
+// TODO
 }
 
 // Radix Sort
-void sort(const uint32_t * in, int n,  uint32_t * out,  bool useDevice=false, int blockSize=1) {
+void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int blockSize=1) {
     GpuTimer timer; 
     timer.Start();
 
@@ -67,9 +61,9 @@ void sort(const uint32_t * in, int n,  uint32_t * out,  bool useDevice=false, in
         printf("\nRadix Sort by host\n");
         sortByHost(in, n, out);
     }
-    else  { // use device
-        printf("\nRadix Sort by device(Thrust)\n");
-        sortByThrust(in, n, out, blockSize);
+    else {// use device
+        printf("\nRadix Sort by device\n");
+        sortByDevice(in, n, out, blockSize);
     }
 
     timer.Stop();
@@ -103,6 +97,6 @@ void checkCorrectness(uint32_t * out, uint32_t * correctOut, int n) {
 
 void printArray(uint32_t * a, int n) {
     for (int i = 0; i < n; i++)
-    printf("%i ", a[i]);
+        printf("%i ", a[i]);
     printf("\n");
 }
