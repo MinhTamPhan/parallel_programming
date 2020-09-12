@@ -15,8 +15,7 @@ __global__ void scanBlkKernel(int * in, int n, int * out, int * blkSums) {
     __syncthreads();
 
     // 2. Each block does scan with data on SMEM
-    for (int stride = 1; stride < blockDim.x; stride *= 2)
-    {
+    for (int stride = 1; stride < blockDim.x; stride *= 2) {
         int neededVal;
         if (threadIdx.x >= stride)
             neededVal = s_data[threadIdx.x - stride];
@@ -29,46 +28,30 @@ __global__ void scanBlkKernel(int * in, int n, int * out, int * blkSums) {
     // 3. Each block write results from SMEM to GMEM
     if (i < n)
         out[i] = s_data[threadIdx.x];
-    if (blkSums != NULL && threadIdx.x == 0)
+    if (blkSums != nullptr && threadIdx.x == 0)
         blkSums[blockIdx.x] = s_data[blockDim.x - 1];
 }
 
 // TODO: You can define necessary functions here
-__global__ void addPrevBlkSum(int * blkSumsScan, int * blkScans, int n)
-{
+__global__ void addPrevBlkSum(int * blkSumsScan, int * blkScans, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + blockDim.x;
     if (i < n)
         blkScans[i] += blkSumsScan[blockIdx.x];
 }
 
 
-void scan(int * in, int n, int * out, bool useDevice=false, dim3 blkSize=dim3(1))
-{
+void scan(int * in, int n, int * out, bool useDevice=false, dim3 blkSize=dim3(1)) {
     GpuTimer timer; 
     timer.Start();
-    if (useDevice == false)
-    {
+    if (useDevice == false) {
     	printf("\nScan by host\n");
 
 		out[0] = in[0];
 	    for (int i = 1; i < n; i++)
-	    {
-	    	out[i] = out[i - 1] + in[i];
-	    }
-
-        /*
-        // Scan locally within each block
-        for (int i = 0; i < n; i++)
-        {
-            if (i % blkSize.x == 0)
-                out[i] = in[i];
-            else
-                out[i] = out[i-1] + in[i];
-        }
-        */
+	        out[i] = out[i - 1] + in[i];
+	    
     }
-    else // Use device
-    {
+    else { // Use device
     	printf("\nScan by device\n");
         // 1. Scan locally within each block, 
         //    and collect blocks' sums into array
@@ -79,13 +62,9 @@ void scan(int * in, int n, int * out, bool useDevice=false, dim3 blkSize=dim3(1)
         CHECK(cudaMalloc(&d_out, nBytes)); 
         dim3 gridSize((n - 1) / blkSize.x + 1);
         if (gridSize.x > 1)
-        {
             CHECK(cudaMalloc(&d_blkSums, gridSize.x * sizeof(int)));
-        }
         else
-        {
-            d_blkSums = NULL;
-        }
+            d_blkSums = nullptr;
 
         CHECK(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
 
@@ -94,8 +73,7 @@ void scan(int * in, int n, int * out, bool useDevice=false, dim3 blkSize=dim3(1)
         cudaDeviceSynchronize();
         CHECK(cudaGetLastError());
 
-        if (gridSize.x > 1)
-        {
+        if (gridSize.x > 1) {
             // 2. Compute each block's previous sum 
             //    by scanning array of blocks' sums
             // TODO

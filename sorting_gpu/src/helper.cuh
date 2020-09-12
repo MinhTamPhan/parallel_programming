@@ -1,4 +1,11 @@
+#ifndef __HELPER__
+#define __HELPER__
 #include <stdio.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/device_ptr.h>
+#include <thrust/copy.h>
+#include <thrust/sort.h>
 
 #define CHECK(call)                                                            \
 {                                                                              \
@@ -48,3 +55,12 @@ struct GpuTimer
         return elapsed;
     }
 };
+
+// Parallel Radix Sort
+void sortByThrust(const uint32_t * in, int n, uint32_t * out, int blockSize) {
+    // TODO
+    thrust::device_vector<uint32_t> dv_out(in, in + n);
+    thrust::sort(dv_out.begin(), dv_out.end());
+    thrust::copy(dv_out.begin(), dv_out.end(), out);
+}
+#endif
