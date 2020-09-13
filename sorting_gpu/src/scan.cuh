@@ -61,11 +61,12 @@ void scan(int * in, int n, int * out, bool useDevice=false, dim3 blkSize=dim3(1)
         CHECK(cudaMalloc(&d_in, nBytes)); 
         CHECK(cudaMalloc(&d_out, nBytes)); 
         dim3 gridSize((n - 1) / blkSize.x + 1);
-        if (gridSize.x > 1)
+        if (gridSize.x > 1) {
             CHECK(cudaMalloc(&d_blkSums, gridSize.x * sizeof(int)));
-        else
+        }
+        else {
             d_blkSums = nullptr;
-
+        }
         CHECK(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
 
         size_t smem = blkSize.x * sizeof(int);
@@ -100,21 +101,6 @@ void scan(int * in, int n, int * out, bool useDevice=false, dim3 blkSize=dim3(1)
 	}
     timer.Stop();
     printf("Processing time: %.3f ms\n", timer.Elapsed());
-}
-
-void printDeviceInfo() {
-    cudaDeviceProp devProv;
-    CHECK(cudaGetDeviceProperties(&devProv, 0));
-    printf("**********GPU info**********\n");
-    printf("Name: %s\n", devProv.name);
-    printf("Compute capability: %d.%d\n", devProv.major, devProv.minor);
-    printf("Num SMs: %d\n", devProv.multiProcessorCount);
-    printf("Max num threads per SM: %d\n", devProv.maxThreadsPerMultiProcessor); 
-    printf("Max num warps per SM: %d\n", devProv.maxThreadsPerMultiProcessor / devProv.warpSize);
-    printf("GMEM: %zu byte\n", devProv.totalGlobalMem);
-    printf("SMEM per SM: %zu byte\n", devProv.sharedMemPerMultiprocessor);
-    printf("SMEM per block: %zu byte\n", devProv.sharedMemPerBlock);
-    printf("****************************\n");
 }
 
 void checkCorrectness(int * out, int * correctOut, int n) {

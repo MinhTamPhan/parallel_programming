@@ -1,11 +1,11 @@
-#include "../src/scan.cu"
+#include "../src/scan.cuh"
 
 int main(int argc, char ** argv) {
     // PRINT OUT DEVICE INFO
     printDeviceInfo();
 
     // SET UP INPUT SIZE
-    int n = (1 << 24) + 1;
+    int n = (1 << 28) + 1;
     printf("\nInput size: %d\n", n);
 
     // ALLOCATE MEMORIES
@@ -20,8 +20,7 @@ int main(int argc, char ** argv) {
 
     // DETERMINE BLOCK SIZE
     dim3 blockSize(512); 
-    if (argc == 2)
-    {
+    if (argc == 2) {
         blockSize.x = atoi(argv[1]);
     }
 
