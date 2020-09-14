@@ -27,3 +27,10 @@
 
 có thể tham khảo file [example](./example.ipynb)
 
+## Tuần 13/9 - 19/9:
+* 14/9 : làm thử phiên bản baseline 2: 
+    - tính song song hóa quá trình tính hist (done)-phiên bản bình thường. đơn giản chỉnh sửa phần tính hist dúng các bit cần tính. thử nghiệm 2 kernal sử dụng SMEM và không sử dụng SMEM.
+        - Nhận thấy việc sử dụng SMEM hoặc không sử dụng SMEM không ảnh hưởng quá nhiều với quá trình sorting với blocksize = `256, 512` (k nhận thấy sự chênh lệnh thời gian quá nhiều, có thể là do nBins = 4 khá nhỏ nên việc sử dụng SMEM k đem lại hiệu quả)
+        - TODO chạy thử trên colab
+    - song song quá trính scan (inprocess) - TODO
+

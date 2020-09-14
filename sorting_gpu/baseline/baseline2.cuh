@@ -1,4 +1,5 @@
 #include "../src/helper.cuh"
+#include "../src/hist.cuh"
 // Sequential Radix Sort
 void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
@@ -6,6 +7,7 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
     int nBins = 1 << nBits; // 2^nBits
 
     int * hist = (int *)malloc(nBins * sizeof(int));
+    int * hist2 = (int *)malloc(nBins * sizeof(int));
     int * histScan = (int *)malloc(nBins * sizeof(int));
 
     uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
@@ -20,13 +22,19 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
         // TODO: Compute histogram
         memset(hist, 0, nBins * sizeof(int));
+        memset(hist2, 0, nBins * sizeof(int));
         int bin;
          // TODO: Compute histogram by device
         for (int i = 0; i < n; i++) {
-            // bin = (src[i] >> bit) & (nBins - 1);
-            bin = src[i] / (1 << (bit)) % (1 << nBits);
+            bin = (src[i] >> bit) & (nBins - 1);
+            // bin = src[i] / (1 << (bit)) % (1 << nBits);
             hist[bin]++;
         }
+        //computeHistDevice(src, n, hist, nBins);
+        dim3 blockSize(512); // Default
+        computeHistDevice(src, n, hist2, nBins, true, blockSize, 1, bit);
+        // checkCorrectness(hist2, hist, nBins);
+        
 
         // TODO: Scan histogram (exclusively)
         // TODO: Compute histogram by device
