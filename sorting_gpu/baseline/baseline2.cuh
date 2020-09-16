@@ -1,5 +1,6 @@
 #include "../src/helper.cuh"
 #include "../src/hist.cuh"
+#include "../src/scan.cuh"
 // Sequential Radix Sort
 void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
@@ -7,8 +8,8 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
     int nBins = 1 << nBits; // 2^nBits
 
     int * hist = (int *)malloc(nBins * sizeof(int));
-    int * hist2 = (int *)malloc(nBins * sizeof(int));
     int * histScan = (int *)malloc(nBins * sizeof(int));
+    int * histScan2 = (int *)malloc(nBins * sizeof(int));
 
     uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t * originalSrc = src; // To free memory later
@@ -22,26 +23,24 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
         // TODO: Compute histogram
         memset(hist, 0, nBins * sizeof(int));
-        memset(hist2, 0, nBins * sizeof(int));
         int bin;
          // TODO: Compute histogram by device
-        for (int i = 0; i < n; i++) {
-            bin = (src[i] >> bit) & (nBins - 1);
-            // bin = src[i] / (1 << (bit)) % (1 << nBits);
-            hist[bin]++;
-        }
-        //computeHistDevice(src, n, hist, nBins);
+        // for (int i = 0; i < n; i++) {
+        //     bin = (src[i] >> bit) & (nBins - 1);
+        //     // bin = src[i] / (1 << (bit)) % (1 << nBits);
+        //     hist[bin]++;
+        // }
         dim3 blockSize(512); // Default
-        computeHistDevice(src, n, hist2, nBins, true, blockSize, 1, bit);
-        // checkCorrectness(hist2, hist, nBins);
+        computeHistDevice(src, n, hist, nBins, true, blockSize, 1, bit);
         
 
         // TODO: Scan histogram (exclusively)
         // TODO: Compute histogram by device
         histScan[0] = 0;
-        for (int bin = 1; bin < nBins; bin++)
-            histScan[bin] = histScan[bin - 1] + hist[bin - 1];
-        
+        // for (int bin = 1; bin < nBins; bin++)
+        //     histScan[bin] = histScan[bin - 1] + hist[bin - 1];
+        scanExclusive(hist, nBins, histScan);
+        // scan(hist, nBins, histScan, true, dim3(nBins));
         // TODO: Scatter elements to correct locations
         for (int i = 0; i < n; i++) {
             // bin = (src[i] >> bit) & (nBins - 1);
