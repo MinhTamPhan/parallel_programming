@@ -46,13 +46,21 @@ SMEM per block: 49152 byte
 * 14/9 : làm thử phiên bản baseline 2: 
     - tính song song hóa quá trình tính hist (done)-phiên bản bình thường. đơn giản chỉnh sửa phần tính hist dúng các bit cần tính. thử nghiệm 2 kernal sử dụng SMEM và không sử dụng SMEM.
         - Nhận thấy việc sử dụng SMEM hoặc không sử dụng SMEM không ảnh hưởng quá nhiều với quá trình sorting với blocksize = `256, 512` (k nhận thấy sự chênh lệnh thời gian quá nhiều, có thể là do nBins = 4 khá nhỏ nên việc sử dụng SMEM k đem lại hiệu quả)
-        - Thời gian chạy giảm 20ms so với phiên bản chạy trên host (1158.377 vs 1102.379) với cấu hình máy như trên
+        - Thời gian chạy giảm `20ms` so với phiên bản chạy trên host (`1158.377` vs `1102.379`) với cấu hình máy như trên
         - TODO chạy thử trên colab
-    - song song quá trính scan (inprocess) - TODO
+    - song song quá trình scan (inprocess) - TODO
 
 * 16/9 : làm thử phiên bản baseline 2: 
-    - song song quá trính scan (inprocess):
+    - song song quá trình scan (inprocess):
         - đã implement scan exclusively bằng host, chạy thử và hàm kernal đang bị lỗi.
         - nhận xét nBin = 4 khá nhỏ, có thể không hiệu quả khi tính toán bằng device. (thử các chiến lược khác trong lần tối ưu tiếp theo)
         - TODO hàm kernal scan exclusively
+
+* 19/9 : làm thử baseline 3:
+    - song song quá trình scan 0-1 (inprocess) - TODO
+    - Scatter (inprocess) - TODO
+
+* 22/9 : làm thử baseline 3:
+    - song song quá trình scan 0-1 (inprocess) - TODO
+    - Scatter (inprocess) - TODO
 
