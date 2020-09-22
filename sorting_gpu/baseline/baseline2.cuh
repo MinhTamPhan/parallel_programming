@@ -4,12 +4,11 @@
 // Sequential Radix Sort
 void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
-    int nBits = 4; // Assume: nBits in {1, 2, 4, 8, 16}
+    int nBits = 4; // Assume: nBits in {1, 2, 4, 8, 16} // k = 1
     int nBins = 1 << nBits; // 2^nBits
 
     int * hist = (int *)malloc(nBins * sizeof(int));
     int * histScan = (int *)malloc(nBins * sizeof(int));
-    int * histScan2 = (int *)malloc(nBins * sizeof(int));
 
     uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t * originalSrc = src; // To free memory later
