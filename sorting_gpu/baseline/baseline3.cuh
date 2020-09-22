@@ -1,38 +1,11 @@
 #include "../src/helper.cuh"
-
-__global__ void scanBlkKernelEx(int * in, int n, int * out, int * blkSums) {   
-    // TODO
-    // 1. Each block loads data from GMEM to SMEM
-    extern __shared__ int s_data[]; // Size: blockDim.x element
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > 0 && i < n)
-        s_data[threadIdx.x] = in[i - 1];
-    else
-        s_data[threadIdx.x] = 0;
-    __syncthreads();
-
-    // 2. Each block does scan with data on SMEM
-    for (int stride = 1; stride < blockDim.x; stride *= 2) {
-        int neededVal;
-        if (threadIdx.x >= stride)
-            neededVal = s_data[threadIdx.x - stride];
-        __syncthreads();
-        if (threadIdx.x >= stride)
-            s_data[threadIdx.x] += neededVal;
-        __syncthreads();
-    }
-
-    // 3. Each block write results from SMEM to GMEM
-    if (i < n)
-        out[i] = s_data[threadIdx.x];
-    if (blkSums != nullptr && threadIdx.x == 0)
-        blkSums[blockIdx.x] = s_data[blockDim.x - 1];
-}
+#include "../src/hist.cuh"
+#include "../src/scan.cuh"
 
 
 
-// parallel counting Sort
-void countingSortByDevice(const uint32_t * in, int n, uint32_t * out) {
+// Sequential Radix Sort
+void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
     int nBits = 1; // Assume: nBits in {1, 2, 4, 8, 16}
     int nBins = 1 << nBits; // 2^nBits
@@ -69,7 +42,7 @@ void countingSortByDevice(const uint32_t * in, int n, uint32_t * out) {
         histScan[0] = 0;
         // for (int bin = 1; bin < nBins; bin++)
         //     histScan[bin] = histScan[bin - 1] + hist[bin - 1];
-        scanExclusive(hist, nBins, histScan);
+        scanExclusive(hist, nBins, histScan, true, dim3(blockSize));
         // scan(hist, nBins, histScan, true, dim3(nBins));
         // TODO: Scatter elements to correct locations
         for (int i = 0; i < n; i++) {
@@ -93,3 +66,22 @@ void countingSortByDevice(const uint32_t * in, int n, uint32_t * out) {
     free(hist);
     free(histScan);
 }
+
+// Radix Sort
+void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int blockSize=1) {
+    GpuTimer timer; 
+    timer.Start();
+
+    if (useDevice == false) {
+        printf("\nRadix Sort by host\n");
+        sortByHost(in, n, out);
+    }
+    else {// use device
+        printf("\nRadix Sort by device\n");
+        sortByThrust(in, n, out, blockSize);
+    }
+
+    timer.Stop();
+    printf("Time: %.3f ms\n", timer.Elapsed());
+}
+

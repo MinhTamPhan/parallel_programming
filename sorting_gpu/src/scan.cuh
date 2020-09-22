@@ -37,7 +37,7 @@ __global__ void scanBlkKernelEx(int * in, int n, int * out, int * blkSums) {
     // 1. Each block loads data from GMEM to SMEM
     extern __shared__ int s_data[]; // Size: blockDim.x element
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > 0 && i < n)
+    if (i < n && i > 0)
         s_data[threadIdx.x] = in[i - 1];
     else
         s_data[threadIdx.x] = 0;

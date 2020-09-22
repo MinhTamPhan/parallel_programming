@@ -39,7 +39,7 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
         histScan[0] = 0;
         // for (int bin = 1; bin < nBins; bin++)
         //     histScan[bin] = histScan[bin - 1] + hist[bin - 1];
-        scanExclusive(hist, nBins, histScan);
+        scanExclusive(hist, nBins, histScan, true, dim3(blockSize));
         // scan(hist, nBins, histScan, true, dim3(nBins));
         // TODO: Scatter elements to correct locations
         for (int i = 0; i < n; i++) {
