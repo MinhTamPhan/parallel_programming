@@ -69,3 +69,8 @@ SMEM per block: 49152 byte
     - đã tiến hành song song phần tính hist bằng một kernal khác với các phiên bản trước là các bước cấp phát và copy thực hiện 1 lần trong hàm sort chứ k đơn giản là thực hiện gọi các hàm trong các bài trước. Kết quả `5018.378 ms` có thể là do chạy counting sort nhiều lần nên chậm hơn các phiên bản trước.
     - TODO làm phần scan song song hóa trên mảng 0-1
     - Thử cài đặt lại các bước song song của thuật toán radix cải tiến.
+
+* 25/9: baseline 3: 
+    - đã tiến hành song song theo các bước trong slide 19-21 cả host code và device code kết quả thời gian chạy `4709.280 ms`
+    - TODO: cải tiến phần cấp phát bộ nhớ 1 lần, hiện tại mỗi lần gọi hàm scan sẽ cấp phát bộ nhớ nhiều lần
+    - TODO: k > 1

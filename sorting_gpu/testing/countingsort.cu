@@ -2,7 +2,7 @@
 #include <stdio.h>
 __constant__ int nZeros;
 
-void rank(int * in, int n, int * out, int * inscan, bool useDevice=false, dim3 blkSize=dim3(1)) {
+void rankCal(int * in, int n, int * out, int * inscan, bool useDevice=false, dim3 blkSize=dim3(1)) {
     GpuTimer timer; 
     timer.Start();
     if (useDevice == false) {
@@ -57,26 +57,26 @@ int main(int argc, char ** argv) {
     // SORT BY DEVICE
     scanExclusive(in, n, inscan, true, blockSize);
     //printArray(inscan, n); // For test by eye
-    checkCorrectness(inscan, correctinscan, n);
+    // checkCorrectness(inscan, correctinscan, n);
 
     //COUNT ZERO IN ARRAY IN
 
-    nZeros = n - inscan[n-1] - in[n-1];
+    int nZeros = n - inscan[n-1] - in[n-1];
     printf("\nZerros in array in: %d\n", nZeros);
 
     int * rank = (int *)malloc(bytes);
     int * correctrank = (int *)malloc(bytes);
 
     //RANK BY HOST
-    rank(in, n, correctrank, inscan, false, blockSize);
+    rankCal(in, n, correctrank, inscan, false, blockSize);
 
     //RANK BY DEVICE
-    rank(in, n, rank, inscan, true, blockSize);
+    rankCal(in, n, rank, inscan, true, blockSize);
 
     // FREE MEMORIES
     free(in);
-    free(out);
-    free(correctOut);
+    // free(out);
+    // free(correctOut);
     
     return EXIT_SUCCESS;
 }

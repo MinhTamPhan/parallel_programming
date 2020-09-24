@@ -1,28 +1,26 @@
 #include "../src/helper.cuh"
-#include "../src/hist.cuh"
 #include "../src/scan.cuh"
 
+// __global__ void computeHistKernel(const uint32_t *in, int n, int *hist, int nBins, int bit) {
+//     // TODO
+//     // Each block computes its local hist using atomic on SMEM
+//     extern __shared__ int s_data[]; // Size: nBins elements
+//     for (int bin = threadIdx.x; bin < nBins; bin += blockDim.x)
+//         s_data[bin] = 0;
+//     __syncthreads();
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i < n)
+//         atomicAdd(&s_data[(in[i] >> bit) & (nBins - 1)], 1);
+//     __syncthreads();
+// }
 
-__global__ void coutingSortKernel(const uint32_t *in, int n, int *hist, int nBins, int bit) {
-    // TODO
-    // Each block computes its local hist using atomic on SMEM
-    extern __shared__ int s_data[]; // Size: nBins elements
-    for (int bin = threadIdx.x; bin < nBins; bin += blockDim.x)
-        s_data[bin] = 0;
-    __syncthreads();
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n)
-        atomicAdd(&s_data[(in[i] >> bit) & (nBins - 1)], 1);
-    __syncthreads();
-}
-
-__global__ void scanBlkKernelEx(int * in, int n, int * out, int * blkSums) {   
+__global__ void scanKernel(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int nBins, int bit) {   
     // TODO
     // 1. Each block loads data from GMEM to SMEM
     extern __shared__ int s_data[]; // Size: blockDim.x element
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n && i > 0)
-        s_data[threadIdx.x] = in[i - 1];
+        s_data[threadIdx.x] = ((in[i - 1] >> bit) & (nBins - 1));
     else
         s_data[threadIdx.x] = 0;
     __syncthreads();
@@ -45,59 +43,129 @@ __global__ void scanBlkKernelEx(int * in, int n, int * out, int * blkSums) {
         blkSums[blockIdx.x] = s_data[blockDim.x - 1];
 }
 
-// Sequential Radix Sort
-void sortByHost(const uint32_t * in, int n, uint32_t * out) {
+// __global__ void addPrevBlkSum(uint32_t * blkSumsScan, uint32_t * blkScans, int n) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x + blockDim.x;
+//     if (i < n)
+//         blkScans[i] += blkSumsScan[blockIdx.x];
+// }
 
-    int nBits = 1; // Assume: nBits in {1, 2, 4, 8, 16}
+void coutingSort2(const uint32_t * in, int n, uint32_t * out) {
+    GpuTimer timer;
+    timer.Start();
+
+    int nBits = 1; // Assume: nBits in {1, 2, 4, 8, 16} // k = 1
     int nBins = 1 << nBits; // 2^nBits
 
-    int * hist = (int *)malloc(nBins * sizeof(int));
-    int * histScan = (int *)malloc(nBins * sizeof(int));
-
+    uint32_t * inScan = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t * originalSrc = src; // To free memory later
     memcpy(src, in, n * sizeof(uint32_t));
     uint32_t * dst = out;
     uint32_t *d_in;
-    int *d_hist, *d_blkSums;
-    CHECK(cudaMalloc(&d_in, n * sizeof(uint32_t)));
-    CHECK(cudaMalloc(&d_hist, nBins * sizeof(uint32_t)));
-    dim3 blockSize(512); // Default
+    uint32_t *d_blkSums, *d_out;
+    size_t nBytes = n * sizeof(uint32_t);
+    CHECK(cudaMalloc(&d_in, nBytes));
+    CHECK(cudaMalloc(&d_out, nBytes)); 
+    // Copy data to device memories
+    dim3 blockSize(512);
     dim3 gridSize((n - 1) / blockSize.x + 1);
-    size_t smemSize = nBins * sizeof(int);
+    if (gridSize.x > 1) {
+        CHECK(cudaMalloc(&d_blkSums, gridSize.x * sizeof(int)));
+    } else {
+        d_blkSums = nullptr;
+    }
+
+    size_t smemSize = blockSize.x * sizeof(int);
+    for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
+        CHECK(cudaMemcpy(d_in, src, n * sizeof(uint32_t), cudaMemcpyHostToDevice));
+        scanKernel<<<gridSize, blockSize, smemSize>>>(d_in, n, d_out, d_blkSums, nBins, bit);
+        cudaDeviceSynchronize();
+        CHECK(cudaGetLastError());
+
+        if (gridSize.x > 1) {
+            // 2. Compute each block's previous sum 
+            //    by scanning array of blocks' sums
+            // TODO
+            size_t temp = gridSize.x * sizeof(int);
+            int * blkSums = (int*)malloc(temp);
+            CHECK(cudaMemcpy(blkSums, d_blkSums, temp, cudaMemcpyDeviceToHost));
+            for (int i = 1; i < gridSize.x; i++)
+                blkSums[i] += blkSums[i-1];
+            CHECK(cudaMemcpy(d_blkSums, blkSums, temp, cudaMemcpyHostToDevice));
+
+            // 3. Add each block's previous sum to its scan result in step 1
+            //addPrevBlkSum<<<gridSize.x - 1, blockSize>>>(d_blkSums, d_out, n);
+            CHECK(cudaDeviceSynchronize());
+            CHECK(cudaGetLastError());
+            
+            free(blkSums);
+        }
+        
+        CHECK(cudaMemcpy(inScan, d_out, nBytes, cudaMemcpyDeviceToHost));
+        int nZeros = n - (inScan[n - 1] + ((in[n - 1] >> bit) & 1));
+        int rank;
+        printf("nZeros %d\n", nZeros);
+        for (int i = 0; i < n; i++) {
+            rank = (src[i] >> bit) & (nBins - 1) ? nZeros + inScan[i] : i - inScan[i];
+            // bin = src[i] / (1 << (bit)) % (1 << nBits);
+            dst[rank] = src[i];
+            // histScan[bin]++;
+        }
+        // Swap src and dst
+        uint32_t * temp = src;
+        src = dst;
+        dst = temp;
+    }
+    //computeHistKernelRadix<<<gridSize, blockSize>>>(d_in, n, d_hist, nBins, bit);
+    // TODO: Initialize d_hist using cudaMemset
+    //CHECK(cudaMemset(d_hist, 0, nBins * sizeof(int)));
+
+    // Call kernel
+
+    timer.Stop();
+    printf("Processing time: %.3f ms\n", timer.Elapsed());
+    free(originalSrc);
+    CHECK(cudaFree(d_in));
+}
+
+
+void coutingSort(const uint32_t * in, int n, uint32_t * out) {
+    int nBits = 1; // Assume: nBits in {1, 2, 4, 8, 16} // k = 1
+
+    uint32_t * inScan = (uint32_t *)malloc(n * sizeof(uint32_t));
+    // int * histScan = (int *)malloc(nBins * sizeof(int));
+
+    uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
+    uint32_t * originalSrc = src; // To free memory later
+    memcpy(src, in, n * sizeof(uint32_t));
+    uint32_t * dst = out;
+
     // Loop from LSD (Least Significant Digit) to MSD (Most Significant Digit)
     // (Each digit consists of nBits bit)
     // In each loop, sort elements according to the current digit from src to dst 
     // (using STABLE counting sort)
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
-        // TODO: Compute histogram
-        memset(hist, 0, nBins * sizeof(int));
-        int bin;
-         // TODO: Compute histogram by device
-        CHECK(cudaMemcpy(d_in, src, n * sizeof(uint32_t), cudaMemcpyHostToDevice));
-        CHECK(cudaMemset(d_hist, 0, nBins * sizeof(int)));
-        coutingSortKernel<<<gridSize, blockSize, smemSize>>>(d_in, n, d_hist, nBins, bit);
-        cudaDeviceSynchronize();
-        CHECK(cudaGetLastError());
-
-        // Copy result from device memories
-        //CHECK(cudaMemcpy(hist, d_hist, nBins * sizeof(int), cudaMemcpyDeviceToHost));
-
-        // TODO: Scan histogram (exclusively)
-        // TODO: Compute histogram by device
-        histScan[0] = 0;
-        
+       
+        dim3 blockSize(512); // Default
+        inScan[0] = 0;
+        // histScan[0] = 0;
         // for (int bin = 1; bin < nBins; bin++)
         //     histScan[bin] = histScan[bin - 1] + hist[bin - 1];
-        scanBlkKernelEx(d_hist, n, nBins, histScan, true, dim3(blockSize));
+        // scanExclusiveCounting(src, n, inScan, bit);
+        scanExclusiveCounting(src, n, inScan, bit, true, dim3(blockSize));
         // scan(hist, nBins, histScan, true, dim3(nBins));
         // TODO: Scatter elements to correct locations
+        
+        int rank;
+        int nZeros = n - (inScan[n - 1] + ((src[n - 1] >> bit) & 1));
+        
         for (int i = 0; i < n; i++) {
-            // bin = (src[i] >> bit) & (nBins - 1);
-            bin = src[i] / (1 << (bit)) % (1 << nBits);
-            dst[histScan[bin]] = src[i];
-            histScan[bin]++;
+            rank = ((src[i] >> bit) & 1) ? nZeros + inScan[i] : i - inScan[i];
+            // bin = src[i] / (1 << (bit)) % (1 << nBits);
+            dst[rank] = src[i];
+            // histScan[bin]++;
         }
+        
 
         // Swap src and dst
         uint32_t * temp = src;
@@ -110,12 +178,10 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
     // Free memory
     free(originalSrc);
-    free(hist);
-    free(histScan);
-
-    CHECK(cudaFree(d_in));
-    CHECK(cudaFree(d_hist));
+    free(inScan);
 }
+
+
 
 // Radix Sort
 void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int blockSize=1) {
@@ -123,8 +189,8 @@ void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int
     timer.Start();
 
     if (useDevice == false) {
-        printf("\nRadix Sort by host\n");
-        sortByHost(in, n, out);
+        printf("\nRadix Sort by device implement\n");
+        coutingSort(in, n, out);
     }
     else {// use device
         printf("\nRadix Sort by device\n");
