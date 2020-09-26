@@ -192,23 +192,16 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
     uint32_t * originalSrc = src; // To free memory later
     memcpy(src, in, n * sizeof(uint32_t));
     uint32_t * dst = out;
+    
     dim3 blockSize(512); // Default
-    //int rank;
-    int nZeros;
-
     uint32_t * d_in, * d_out, * d_blkSums;
     size_t nBytes = n * sizeof(uint32_t);
     CHECK(cudaMalloc(&d_in, nBytes)); 
     CHECK(cudaMalloc(&d_out, nBytes)); 
     dim3 gridSize((n - 1) / blockSize.x + 1);
-    CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
 
-    if (gridSize.x > 1) {
-        CHECK(cudaMalloc(&d_blkSums, gridSize.x * sizeof(int)));
-    }
-    else {
-        d_blkSums = nullptr;
-    }
+    //CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
+    //size_t smem = blockSize.x * sizeof(int);
 
     // Loop from LSD (Least Significant Digit) to MSD (Most Significant Digit)
     // (Each digit consists of nBits bit)
@@ -216,14 +209,21 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
     // (using STABLE counting sort)
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
        
-        
+        //dim3 blockSize(512); // Default
         inScan[0] = 0;
+        CHECK(cudaMemcpy(d_out, inScan, nBytes, cudaMemcpyHostToDevice));
         // histScan[0] = 0;
         // for (int bin = 1; bin < nBins; bin++)
         //     histScan[bin] = histScan[bin - 1] + hist[bin - 1];
         // scanExclusiveCounting(src, n, inScan, bit);
         //scanExclusiveCounting(src, n, inScan, bit, true, dim3(blockSize));
-
+        if (gridSize.x > 1) {
+            CHECK(cudaMalloc(&d_blkSums, gridSize.x * sizeof(uint32_t)));
+        }
+        else {
+            d_blkSums = nullptr;
+        }
+        CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
         size_t smem = blockSize.x * sizeof(int);
         scanBlkKernelCnt<<<gridSize, blockSize, smem>>>(d_in, n, d_out, d_blkSums, bit);
         cudaDeviceSynchronize();
@@ -249,13 +249,11 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
         }
 
         CHECK(cudaMemcpy(inScan, d_out, nBytes, cudaMemcpyDeviceToHost));
-
         // scan(hist, nBins, histScan, true, dim3(nBins));
         // TODO: Scatter elements to correct locations
         
         int rank;
-        nZeros = n - (inScan[n - 1] + ((src[n - 1] >> bit) & 1));
-        
+        int nZeros = n - (inScan[n - 1] + ((src[n - 1] >> bit) & 1));
         for (int i = 0; i < n; i++) {
             rank = ((src[i] >> bit) & 1) ? nZeros + inScan[i] : i - inScan[i];
             // bin = src[i] / (1 << (bit)) % (1 << nBits);
@@ -279,8 +277,9 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
     CHECK(cudaFree(d_in));
     CHECK(cudaFree(d_out));
     CHECK(cudaFree(d_blkSums));
+    timer.Stop();
+    printf("Processing time: %.3f ms\n", timer.Elapsed());
 }
-
 
 
 // Radix Sort
