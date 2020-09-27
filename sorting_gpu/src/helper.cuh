@@ -92,7 +92,7 @@ void checkCorrectness(uint32_t * out, uint32_t * correctOut, int n) {
 
 void printArray(uint32_t * a, int n) {
     for (int i = 0; i < n; i++)
-        printf("%i ", a[i]);
+        printf("%4i ", a[i]);
     printf("\n");
 }
 
