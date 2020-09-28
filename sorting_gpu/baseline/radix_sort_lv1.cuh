@@ -94,12 +94,14 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
     int nBits = k;
     int nBins = 1 << nBits;
     size_t nBytes = n * sizeof(uint32_t), hByte = nBins * sizeof(uint32_t) * gridSize.x;
-    uint32_t *d_in, *d_hist, *hScan;
+    uint32_t *d_in, *d_hist, *hScan, *blkSums;
     uint32_t *d_hist_t;
 
     CHECK(cudaMalloc(&d_in, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte)); 
     CHECK(cudaMalloc(&d_hist_t, hByte));
+    CHECK(cudaMalloc(&hScan, hByte));
+    CHECK(cudaMalloc(&blkSums, sizeof(uint32_t) * gridSize.x));
     CHECK(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
         CHECK(cudaMemset(d_hist, 0, hByte));
@@ -110,9 +112,10 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
         transpose_naive<<<gridSize, blockSize>>>(d_hist_t, d_hist, 4, 3);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        CHECK(cudaMemcpy(out, d_hist_t , hByte, cudaMemcpyDeviceToHost));
-        // TODO: TRANSPOSE
-        // scanBlkKernelCnt<<<gridSize, blockSize>>>(d_hist, nBins * gridSize.x , hScan, nBins, bit);
+        scanBlkKernelCnt<<<gridSize, blockSize, 12 * 4>>>(d_hist_t, nBins * gridSize.x , hScan, blkSums, bit);
+        CHECK(cudaDeviceSynchronize());
+        CHECK(cudaGetLastError());
+        CHECK(cudaMemcpy(out, hScan , hByte, cudaMemcpyDeviceToHost));
         break;
     }
 }
