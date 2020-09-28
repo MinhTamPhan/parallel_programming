@@ -74,3 +74,6 @@ SMEM per block: 49152 byte
     - đã tiến hành song song theo các bước trong slide 19-21 cả host code và device code kết quả thời gian chạy `4709.280 ms`
     - TODO: cải tiến phần cấp phát bộ nhớ 1 lần, hiện tại mỗi lần gọi hàm scan sẽ cấp phát bộ nhớ nhiều lần
     - TODO: k > 1
+* 27/9  baseline 3:
+    - đã cài đặt các bước đơn giản của thuật toán radix sort với k = 2. đã thực hiện xong bước exclusive scan
+    - TODO: Mỗi block thực hiện scatter phần dữ liệu của mình xuống mảng output dựa vào kết quả scan ở trên

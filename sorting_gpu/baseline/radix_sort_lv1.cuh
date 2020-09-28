@@ -50,12 +50,12 @@ __global__ void transpose_naive(uint32_t *odata, uint32_t* idata, int width, int
     }
 }
 
-__global__ void scanBlkKernelCnt(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int bit) {   
+__global__ void scanBlkKernelCnt(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int nBins, int bit) {   
     // 1. Each block loads data from GMEM to SMEM
     extern __shared__ int s_data[]; // Size: blockDim.x element
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n && i > 0)
-        s_data[threadIdx.x] = ((in[i - 1] >> bit) & 1);
+        s_data[threadIdx.x] = ((in[i - 1] >> bit) & (nBins - 1));
     else
         s_data[threadIdx.x] = 0;
     __syncthreads();
@@ -91,8 +91,8 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
     dim3 blockSize(49);
     //dim3 blockSize(512); // Default
     dim3 gridSize((n - 1) / blockSize.x + 1);
-    int nBits = k;
-    int nBins = 1 << nBits;
+    // int nBits = k;
+    int nBins = 1 << k;
     size_t nBytes = n * sizeof(uint32_t), hByte = nBins * sizeof(uint32_t) * gridSize.x;
     uint32_t *d_in, *d_hist, *hScan, *blkSums;
     uint32_t *d_hist_t;
@@ -103,7 +103,7 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
     CHECK(cudaMalloc(&hScan, hByte));
     CHECK(cudaMalloc(&blkSums, sizeof(uint32_t) * gridSize.x));
     CHECK(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
-    for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
+    for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
         CHECK(cudaMemset(d_hist, 0, hByte));
         computeHist<<<gridSize, blockSize>>>(d_in, n, d_hist, nBins, bit);
         CHECK(cudaDeviceSynchronize());
@@ -112,7 +112,7 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
         transpose_naive<<<gridSize, blockSize>>>(d_hist_t, d_hist, 4, 3);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        scanBlkKernelCnt<<<gridSize, blockSize, 12 * 4>>>(d_hist_t, nBins * gridSize.x , hScan, blkSums, bit);
+        scanBlkKernelCnt<<<gridSize, blockSize, 12 * 4>>>(d_hist_t, nBins * gridSize.x , hScan, blkSums, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
         CHECK(cudaMemcpy(out, hScan , hByte, cudaMemcpyDeviceToHost));

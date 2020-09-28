@@ -68,12 +68,19 @@ int main(int argc, char ** argv) {
     hist(&in[49 * 2], 2, correctOut + nBins * 2, 0, nBins);
     // printArray(correctOut, nBins * 3);
     histTranspose(correctOut, 3, 4, correctOutTranspose);
-    printArray(correctOutTranspose, nBins * 3);
+    // printArray(correctOutTranspose, nBins * 3);
+
+    uint32_t * histScan = (uint32_t *)malloc(nBins * 3); 
+    histScan[0] = 0;
+    for (int bin = 1; bin < 12; bin++)
+        histScan[bin] = histScan[bin - 1] + ((correctOutTranspose[bin - 1] >> 0) & (nBins - 1));    
+
+    printArray(histScan, nBins * 3);
 
     radixSortLv1NoShared(in, n, out, 2);
     
     printArray(out, nBins * 3);
-    checkCorrectness(out, correctOutTranspose, 12);
+    checkCorrectness(out, histScan, 12);
 
     // FREE MEMORIES
     free(in);
