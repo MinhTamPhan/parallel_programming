@@ -16,32 +16,30 @@ void histTranspose(uint32_t * in, int h, int w, uint32_t * out) {
             out[i * h + j] = in[j * w + i];
 }
 
-__global__ void transposeNoBankConflicts(float *odata, float *idata, int width, int height)
-{
-    // Handle to thread block group
-    __shared__ float tile[TILE_DIM][TILE_DIM+1];
+// __global__ void transposeNoBankConflicts(float *odata, float *idata, int width, int height) {
+//     // Handle to thread block group
+//     __shared__ float tile[TILE_DIM][TILE_DIM+1];
 
-    int xIndex = blockIdx.x * TILE_DIM + threadIdx.x;
-    int yIndex = blockIdx.y * TILE_DIM + threadIdx.y;
-    int index_in = xIndex + (yIndex)*width;
+//     int xIndex = blockIdx.x * TILE_DIM + threadIdx.x;
+//     int yIndex = blockIdx.y * TILE_DIM + threadIdx.y;
+//     int index_in = xIndex + (yIndex)*width;
 
-    xIndex = blockIdx.y * TILE_DIM + threadIdx.x;
-    yIndex = blockIdx.x * TILE_DIM + threadIdx.y;
-    int index_out = xIndex + (yIndex)*height;
+//     xIndex = blockIdx.y * TILE_DIM + threadIdx.x;
+//     yIndex = blockIdx.x * TILE_DIM + threadIdx.y;
+//     int index_out = xIndex + (yIndex)*height;
 
-    for (int i=0; i<TILE_DIM; i+=BLOCK_ROWS)
-    {
-        tile[threadIdx.y+i][threadIdx.x] = idata[index_in+i*width];
-    }
+//     for (int i=0; i<TILE_DIM; i+=BLOCK_ROWS)
+//     {
+//         tile[threadIdx.y+i][threadIdx.x] = idata[index_in+i*width];
+//     }
 
-    __syncthreads();
+//     __syncthreads();
 
 
-    for (int i=0; i<TILE_DIM; i+=BLOCK_ROWS)
-    {
-        odata[index_out+i*height] = tile[threadIdx.x][threadIdx.y+i];
-    }
-}
+//     for (int i=0; i<TILE_DIM; i+=BLOCK_ROWS) {
+//         odata[index_out+i*height] = tile[threadIdx.x][threadIdx.y+i];
+//     }
+// }
 
 int main(int argc, char ** argv) {
 
@@ -72,10 +70,10 @@ int main(int argc, char ** argv) {
     histTranspose(correctOut, 3, 4, correctOutTranspose);
     printArray(correctOutTranspose, nBins * 3);
 
-    // radixSortLv1NoShared(in, n, out, 4);
+    radixSortLv1NoShared(in, n, out, 2);
     
-    // printArray(out, nBins * 3);
-    // checkCorrectness(out, correctOut, 12);
+    printArray(out, nBins * 3);
+    checkCorrectness(out, correctOutTranspose, 12);
 
     // FREE MEMORIES
     free(in);

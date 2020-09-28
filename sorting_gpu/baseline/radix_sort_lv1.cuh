@@ -38,6 +38,18 @@ __global__ void computeHist(uint32_t *in, int n, uint32_t *hist, int nBins, int 
     }
 }
 
+__global__ void transpose_naive(uint32_t *odata, uint32_t* idata, int width, int height) {
+    unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int xIndex = i % width;
+    unsigned int yIndex = i % height;
+   
+    if (xIndex < width && yIndex < height) {
+        unsigned int index_in  = xIndex + width * yIndex;
+        unsigned int index_out = yIndex + height * xIndex;
+        odata[index_out] = idata[index_in]; 
+    }
+}
+
 __global__ void scanBlkKernelCnt(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int bit) {   
     // 1. Each block loads data from GMEM to SMEM
     extern __shared__ int s_data[]; // Size: blockDim.x element
@@ -79,23 +91,28 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
     dim3 blockSize(49);
     //dim3 blockSize(512); // Default
     dim3 gridSize((n - 1) / blockSize.x + 1);
-    printf("gridSize %d\n", gridSize.x);
     int nBits = k;
     int nBins = 1 << nBits;
     size_t nBytes = n * sizeof(uint32_t), hByte = nBins * sizeof(uint32_t) * gridSize.x;
     uint32_t *d_in, *d_hist, *hScan;
+    uint32_t *d_hist_t;
 
     CHECK(cudaMalloc(&d_in, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte)); 
+    CHECK(cudaMalloc(&d_hist_t, hByte));
     CHECK(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
         CHECK(cudaMemset(d_hist, 0, hByte));
         computeHist<<<gridSize, blockSize>>>(d_in, n, d_hist, nBins, bit);
-        // CHECK(cudaDeviceSynchronize());
-        // CHECK(cudaGetLastError());
+        CHECK(cudaDeviceSynchronize());
+        CHECK(cudaGetLastError());
         // CHECK(cudaMemcpy(out, d_hist , hByte, cudaMemcpyDeviceToHost));
-        break;
+        transpose_naive<<<gridSize, blockSize>>>(d_hist_t, d_hist, 4, 3);
+        CHECK(cudaDeviceSynchronize());
+        CHECK(cudaGetLastError());
+        CHECK(cudaMemcpy(out, d_hist_t , hByte, cudaMemcpyDeviceToHost));
         // TODO: TRANSPOSE
-        //scanBlkKernelCnt<<<gridSize, blockSize>>>(d_hist, nBins * gridSize.x , hScan, nBins, bit);
+        // scanBlkKernelCnt<<<gridSize, blockSize>>>(d_hist, nBins * gridSize.x , hScan, nBins, bit);
+        break;
     }
 }
