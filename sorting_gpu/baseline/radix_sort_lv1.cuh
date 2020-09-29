@@ -87,6 +87,12 @@ __global__ void addPrevBlkSumCnt(uint32_t * blkSumsScan, uint32_t * blkScans, in
 }
 
 
+// TODO: You can define necessary functions here
+__global__ void scatter(uint32_t * in, uint32_t * Scans, int n, uint32_t *out) {
+    // TODO
+}
+
+
 void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
     dim3 blockSize(49);
     //dim3 blockSize(512); // Default
@@ -94,14 +100,14 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
     // int nBits = k;
     int nBins = 1 << k;
     size_t nBytes = n * sizeof(uint32_t), hByte = nBins * sizeof(uint32_t) * gridSize.x;
-    uint32_t *d_in, *d_hist, *hScan, *blkSums;
+    uint32_t *d_in, *d_hist, *d_scan, *d_blkSums;
     uint32_t *d_hist_t;
 
     CHECK(cudaMalloc(&d_in, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte)); 
     CHECK(cudaMalloc(&d_hist_t, hByte));
-    CHECK(cudaMalloc(&hScan, hByte));
-    CHECK(cudaMalloc(&blkSums, sizeof(uint32_t) * gridSize.x));
+    CHECK(cudaMalloc(&d_scan, hByte));
+    CHECK(cudaMalloc(&d_blkSums, sizeof(uint32_t) * 3));
     CHECK(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
         CHECK(cudaMemset(d_hist, 0, hByte));
@@ -112,10 +118,26 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
         transpose_naive<<<gridSize, blockSize>>>(d_hist_t, d_hist, 4, 3);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        scanBlkKernelCnt<<<gridSize, blockSize, 12 * 4>>>(d_hist_t, nBins * gridSize.x , hScan, blkSums, nBins, bit);
+        scanBlkKernelCnt<<<3, 4, 12 * 4>>>(d_hist_t, nBins * gridSize.x , d_scan, d_blkSums, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        CHECK(cudaMemcpy(out, hScan , hByte, cudaMemcpyDeviceToHost));
+        if (gridSize.x > 1) {
+            // 2. Compute each block's previous sum 
+            //    by scanning array of blocks' sums
+            size_t temp = 3 * sizeof(int);
+            int * h_blkSums = (int*)malloc(temp);
+            CHECK(cudaMemcpy(h_blkSums, d_blkSums, temp, cudaMemcpyDeviceToHost));
+            for (int i = 1; i < 3; i++)
+                h_blkSums[i] += h_blkSums[i-1];
+            CHECK(cudaMemcpy(d_blkSums, h_blkSums, temp, cudaMemcpyHostToDevice));
+           
+            // 3. Add each block's previous sum to its scan result in step 1
+            addPrevBlkSumCnt<<<3 - 1, 4>>>(d_blkSums, d_scan, 12);
+            // CHECK(cudaDeviceSynchronize());
+            CHECK(cudaGetLastError());
+            free(h_blkSums);
+        }
+        CHECK(cudaMemcpy(out, d_scan , hByte, cudaMemcpyDeviceToHost));
         break;
     }
 }

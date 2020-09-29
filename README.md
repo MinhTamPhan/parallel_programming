@@ -77,3 +77,9 @@ SMEM per block: 49152 byte
 * 27/9  baseline 3:
     - đã cài đặt các bước đơn giản của thuật toán radix sort với k = 2. đã thực hiện xong bước exclusive scan
     - TODO: Mỗi block thực hiện scatter phần dữ liệu của mình xuống mảng output dựa vào kết quả scan ở trên
+
+* 27/8  baseline 3:
+    - hoàn thành bước tính exclusive scan bao gồm phần rộng hơn kernal
+    - TODO:
+        - tham khảo transpose ở [đây](https://github.com/JonathanWatkins/CUDA/blob/master/NvidiaCourse/Exercises/transpose/transpose.cu) để tính toán hiệu quả phần xoay hist
+        - thực hiện scatter
