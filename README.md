@@ -78,8 +78,17 @@ SMEM per block: 49152 byte
     - đã cài đặt các bước đơn giản của thuật toán radix sort với k = 2. đã thực hiện xong bước exclusive scan
     - TODO: Mỗi block thực hiện scatter phần dữ liệu của mình xuống mảng output dựa vào kết quả scan ở trên
 
-* 27/8  baseline 3:
+* 28/9  baseline 3:
     - hoàn thành bước tính exclusive scan bao gồm phần rộng hơn kernal
     - TODO:
         - tham khảo transpose ở [đây](https://github.com/JonathanWatkins/CUDA/blob/master/NvidiaCourse/Exercises/transpose/transpose.cu) để tính toán hiệu quả phần xoay hist
         - thực hiện scatter
+
+* 29/9  baseline 3:
+    - thực hiện scatter:
+        - ý tưởng đùng SMEM mỗi thread sẽ tự tính rank cho phần tử mình phụ trách
+        - Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử nhỏ hoặc bằng mình gọi là left
+        - mỗi thread lặp từ threadId của mình + 1 đến max bên phải (nhớ ngưỡng tràn block biên) đếm có bao nhiêu phần tử nhỏ mình gọi là right
+        - rank[threadId] = left + right // gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
+    - TODO test scatter
+    - TODO chạy và báo cáo kết quả

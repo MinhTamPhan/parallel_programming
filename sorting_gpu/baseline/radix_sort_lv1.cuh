@@ -86,10 +86,43 @@ __global__ void addPrevBlkSumCnt(uint32_t * blkSumsScan, uint32_t * blkScans, in
         blkScans[i] += blkSumsScan[blockIdx.x];
 }
 
+/*
+**
+shared memory: number of bytes per block
+for extern smem variables declared without size
+© NVIDIA Corporation 2009
+Optional, 0 by default
+http://developer.download.nvidia.com/CUDA/training/NVIDIA_GPU_Computing_Webinars_Introduction_to_CUDA.pdf
+**
+*/
 
 // TODO: You can define necessary functions here
-__global__ void scatter(uint32_t * in, uint32_t * Scans, int n, uint32_t *out) {
+__global__ void scatter(uint32_t * in, uint32_t * scans, uint32_t *d_hist, int n, uint32_t *out, int nBins, int bit, int withScan) {
     // TODO
+    // ý tưởng đùng SMEM mỗi thread sẽ tự tính rank cho phần tử mình phụ trách
+    // Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử nhỏ hoặc bằng mình gọi là left
+    // mỗi thread lặp từ threadId của mình + 1 đến max bên phải (nhớ ngưỡng tràn block biên) đếm có bao nhiêu phần tử nhỏ mình gọi là right
+    // rank[threadId] = left + right // gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
+    extern __shared__ int s_data[]; // Size: blockDim.x * 2 element default = 0, link tham khảo ở trên
+    int* left = &s_data[0];
+    int* right = &s_data[blockDim.x];
+    int begin = blockIdx.x * blockDim.x;
+    for(int i = begin; i < begin + threadIdx.x; i++) {
+        if (i < n && in[i] <= in[begin + threadIdx.x]) {
+            left[threadIdx.x]++; // không cần syncthreads, hay automic vì các thread chạy độc lập
+        }
+    }
+    // tương tự vòng for trên nhưng tính cho bần bên phải
+    for(int i = begin + threadIdx.x + 1; i < begin + threadIdx.x + blockDim.x; i++) {
+        if (i < n && in[i] < in[begin + threadIdx.x]) {
+            right[threadIdx.x]++; // không cần syncthreads vì các thread chạy độc lập
+        }
+    }
+
+    int digit = (in[begin + threadIdx.x] >> bit) & (nBins - 1);// lấy digit dang sét
+    int begin_out = scans[digit * withScan + blockDim.x];
+    int rank = begin_out + right[threadIdx.x] + left[threadIdx.x];
+    out[rank] = in[begin + threadIdx.x];
 }
 
 
