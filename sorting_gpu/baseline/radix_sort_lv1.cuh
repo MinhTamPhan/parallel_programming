@@ -97,7 +97,7 @@ http://developer.download.nvidia.com/CUDA/training/NVIDIA_GPU_Computing_Webinars
 */
 
 // TODO: You can define necessary functions here
-__global__ void scatter(uint32_t * in, uint32_t * scans, uint32_t *d_hist, int n, uint32_t *out, int nBins, int bit, int withScan) {
+__global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, int nBins, int bit, int withScan) {
     // TODO
     // ý tưởng đùng SMEM mỗi thread sẽ tự tính rank cho phần tử mình phụ trách
     // Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử nhỏ hoặc bằng mình gọi là left
@@ -107,22 +107,23 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, uint32_t *d_hist, int n
     int* left = &s_data[0];
     int* right = &s_data[blockDim.x];
     int begin = blockIdx.x * blockDim.x;
-    for(int i = begin; i < begin + threadIdx.x; i++) {
-        if (i < n && in[i] <= in[begin + threadIdx.x]) {
-            left[threadIdx.x]++; // không cần syncthreads, hay automic vì các thread chạy độc lập
+    for(int i = begin; i < begin + threadIdx.x && i < n; i++) {
+        if (begin + threadIdx.x < n && in[i] <= in[begin + threadIdx.x]) {
+            left[threadIdx.x]++; // không cần syncthreads, hay atomic vì các thread chạy độc lập
         }
     }
-    // tương tự vòng for trên nhưng tính cho bần bên phải
-    for(int i = begin + threadIdx.x + 1; i < begin + threadIdx.x + blockDim.x; i++) {
-        if (i < n && in[i] < in[begin + threadIdx.x]) {
+    // // tương tự vòng for trên nhưng tính cho bần bên phải
+    for(int i = begin + threadIdx.x + 1; i < begin + blockDim.x && i < n; i++) {
+        if (begin + threadIdx.x < n && in[i] < in[begin + threadIdx.x]) {
             right[threadIdx.x]++; // không cần syncthreads vì các thread chạy độc lập
         }
     }
-
-    int digit = (in[begin + threadIdx.x] >> bit) & (nBins - 1);// lấy digit dang sét
-    int begin_out = scans[digit * withScan + blockDim.x];
-    int rank = begin_out + right[threadIdx.x] + left[threadIdx.x];
-    out[rank] = in[begin + threadIdx.x];
+    if (begin + threadIdx.x < n) {
+        int digit = (in[begin + threadIdx.x] >> bit) & (nBins - 1); // lấy digit dang xét
+        int begin_out = scans[digit * withScan + blockIdx.x];
+        int rank = begin_out + right[threadIdx.x] + left[threadIdx.x];
+        out[rank] = in[begin + threadIdx.x];
+    }
 }
 
 
@@ -133,44 +134,63 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
     // int nBits = k;
     int nBins = 1 << k;
     size_t nBytes = n * sizeof(uint32_t), hByte = nBins * sizeof(uint32_t) * gridSize.x;
-    uint32_t *d_in, *d_hist, *d_scan, *d_blkSums;
+    uint32_t *d_in, *d_hist, *d_scan, *d_blkSums, *d_out;
     uint32_t *d_hist_t;
 
+    uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
+    uint32_t * originalSrc = src; // To free memory later
+    memcpy(src, in, n * sizeof(uint32_t));
+    uint32_t * dst = out;
+
     CHECK(cudaMalloc(&d_in, nBytes));
+    CHECK(cudaMalloc(&d_out, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte)); 
     CHECK(cudaMalloc(&d_hist_t, hByte));
     CHECK(cudaMalloc(&d_scan, hByte));
     CHECK(cudaMalloc(&d_blkSums, sizeof(uint32_t) * 3));
-    CHECK(cudaMemcpy(d_in, in, nBytes, cudaMemcpyHostToDevice));
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
+        CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
         CHECK(cudaMemset(d_hist, 0, hByte));
         computeHist<<<gridSize, blockSize>>>(d_in, n, d_hist, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        // CHECK(cudaMemcpy(out, d_hist , hByte, cudaMemcpyDeviceToHost));
-        transpose_naive<<<gridSize, blockSize>>>(d_hist_t, d_hist, 4, 3);
+
+        transpose_naive<<<gridSize, blockSize>>>(d_hist_t, d_hist, nBins, gridSize.x);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        scanBlkKernelCnt<<<3, 4, 12 * 4>>>(d_hist_t, nBins * gridSize.x , d_scan, d_blkSums, nBins, bit);
+
+        int smemScan = nBins * gridSize.x * sizeof(uint32_t);
+        scanBlkKernelCnt<<<gridSize.x, nBins, smemScan>>>(d_hist_t, nBins * gridSize.x , d_scan, d_blkSums, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
         if (gridSize.x > 1) {
             // 2. Compute each block's previous sum 
             //    by scanning array of blocks' sums
-            size_t temp = 3 * sizeof(int);
+            size_t temp =  gridSize.x * sizeof(int);
             int * h_blkSums = (int*)malloc(temp);
             CHECK(cudaMemcpy(h_blkSums, d_blkSums, temp, cudaMemcpyDeviceToHost));
-            for (int i = 1; i < 3; i++)
+            for (int i = 1; i < gridSize.x; i++)
                 h_blkSums[i] += h_blkSums[i-1];
             CHECK(cudaMemcpy(d_blkSums, h_blkSums, temp, cudaMemcpyHostToDevice));
            
             // 3. Add each block's previous sum to its scan result in step 1
-            addPrevBlkSumCnt<<<3 - 1, 4>>>(d_blkSums, d_scan, 12);
-            // CHECK(cudaDeviceSynchronize());
+            addPrevBlkSumCnt<<<gridSize.x - 1, nBins>>>(d_blkSums, d_scan, 12);
+            CHECK(cudaDeviceSynchronize());
             CHECK(cudaGetLastError());
             free(h_blkSums);
         }
-        CHECK(cudaMemcpy(out, d_scan , hByte, cudaMemcpyDeviceToHost));
-        break;
+        int smemScatter = 2 * blockSize.x * sizeof(uint32_t);
+        scatter<<<gridSize, blockSize, smemScatter>>>(d_in, d_scan, n, d_out, nBins, bit, gridSize.x);
+        CHECK(cudaDeviceSynchronize());
+        CHECK(cudaGetLastError());
+
+        CHECK(cudaMemcpy(dst, d_out , nBytes, cudaMemcpyDeviceToHost));
+        // Swap src and dst
+        uint32_t * temp = src;
+        src = dst;
+        dst = temp;
     }
+    // Copy result to out
+    memcpy(out, src, nBytes); 
+    // Free memory
 }

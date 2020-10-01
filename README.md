@@ -92,3 +92,6 @@ SMEM per block: 49152 byte
         - rank[threadId] = left + right // gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
     - TODO test scatter
     - TODO chạy và báo cáo kết quả
+* 30/9 baseline 3:
+    - test scatter Fail
+    - Cần check lại hàm scatter hoặc code lại, theo ý tưởng khác
