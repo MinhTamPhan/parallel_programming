@@ -55,32 +55,32 @@ int main(int argc, char ** argv) {
     size_t bytes = n * sizeof(uint32_t);
     size_t hByte = nBins * sizeof(uint32_t) * 3;
     uint32_t * in = (uint32_t *)malloc(bytes);
-    uint32_t * out = (uint32_t *)malloc(hByte); // Device result
+    uint32_t * out = (uint32_t *)malloc(bytes); // Device result
     uint32_t * correctOut = (uint32_t *)malloc(hByte); 
     uint32_t * correctOutTranspose = (uint32_t *)malloc(hByte); 
     memset(correctOut, 0 , n);
     // SET UP INPUT DATA
-    for (int i = 0; i < n; i++)
-        in[i] = rand();
+    // for (int i = 0; i < n; i++)
+    //     in[i] = rand();
 
-    hist(in, 49, correctOut, 0, nBins);
-    hist(&in[49], 49, correctOut + nBins, 0, nBins);
-    hist(&in[49 * 2], 2, correctOut + nBins * 2, 0, nBins);
-    // printArray(correctOut, nBins * 3);
-    histTranspose(correctOut, 3, 4, correctOutTranspose);
-    // printArray(correctOutTranspose, nBins * 3);
+    // hist(in, 49, correctOut, 0, nBins);
+    // hist(&in[49], 49, correctOut + nBins, 0, nBins);
+    // hist(&in[49 * 2], 2, correctOut + nBins * 2, 0, nBins);
+    // // printArray(correctOut, nBins * 3);
+    // histTranspose(correctOut, 3, 4, correctOutTranspose);
+    // // printArray(correctOutTranspose, nBins * 3);
 
-    uint32_t * histScan = (uint32_t *)malloc(nBins * 3); 
-    histScan[0] = 0;
-    for (int bin = 1; bin < 12; bin++)
-        histScan[bin] = histScan[bin - 1] + ((correctOutTranspose[bin - 1] >> 0) & (nBins - 1));    
+    // uint32_t * histScan = (uint32_t *)malloc(nBins * 3); 
+    // histScan[0] = 0;
+    // for (int bin = 1; bin < 12; bin++)
+    //     histScan[bin] = histScan[bin - 1] + ((correctOutTranspose[bin - 1] >> 0) & (nBins - 1));    
 
-    printArray(histScan, nBins * 3);
+    // printArray(histScan, 12);
 
     radixSortLv1NoShared(in, n, out, 2);
     
-    printArray(out, nBins * 3);
-    checkCorrectness(out, histScan, 12);
+    printArray(out, 100);
+    // checkCorrectness(out, histScan, 12);
 
     // FREE MEMORIES
     free(in);
