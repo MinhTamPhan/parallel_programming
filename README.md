@@ -95,3 +95,4 @@ SMEM per block: 49152 byte
 * 30/9 baseline 3:
     - test scatter Fail
     - Cần check lại hàm scatter hoặc code lại, theo ý tưởng khác
+    
