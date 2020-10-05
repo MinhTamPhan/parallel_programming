@@ -21,10 +21,10 @@ int main(int argc, char ** argv) {
 
     // SET UP INPUT DATA
     for (int i = 0; i < n; i++)
-       in[i] = rand();    
-	
+       in[i] = rand();
+
 	// DETERMINE BLOCK SIZES
-    int blockSize = 512; // Default 
+    int blockSize = 512; // Default
     if (argc == 2)
         blockSize = atoi(argv[1]);
 
@@ -33,10 +33,10 @@ int main(int argc, char ** argv) {
     // SORT BY DIVECE(THRUST)
 	sort(in, n, out, nBits, blockSize, true);
 	checkCorrectness(out, correctOut, n);
-    // FREE MEMORIES 
+    // FREE MEMORIES
     free(in);
     free(out);
     free(correctOut);
-    
+
     return EXIT_SUCCESS;
 }
