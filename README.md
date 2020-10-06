@@ -43,14 +43,15 @@ SMEM per block: 49152 byte
 ```
 
 ## Tuần 13/9 - 19/9:
-* 14/9 : làm thử phiên bản baseline 2: 
+
+* 14/9 : làm thử phiên bản baseline 2:
     - tính song song hóa quá trình tính hist (done)-phiên bản bình thường. đơn giản chỉnh sửa phần tính hist dúng các bit cần tính. thử nghiệm 2 kernal sử dụng SMEM và không sử dụng SMEM.
         - Nhận thấy việc sử dụng SMEM hoặc không sử dụng SMEM không ảnh hưởng quá nhiều với quá trình sorting với blocksize = `256, 512` (k nhận thấy sự chênh lệnh thời gian quá nhiều, có thể là do nBins = 4 khá nhỏ nên việc sử dụng SMEM k đem lại hiệu quả)
         - Thời gian chạy giảm `20ms` so với phiên bản chạy trên host (`1158.377` vs `1102.379`) với cấu hình máy như trên
         - TODO chạy thử trên colab
-    - song song quá trình scan (inprocess) - TODO 
+    - song song quá trình scan (inprocess) - TODO
 
-* 16/9 : làm thử phiên bản baseline 2: 
+* 16/9 : làm thử phiên bản baseline 2:
     - song song quá trình scan (inprocess):
         - đã implement scan exclusively bằng host, chạy thử và hàm kernal đang bị lỗi.
         - nhận xét nBin = 4 khá nhỏ, có thể không hiệu quả khi tính toán bằng device. (thử các chiến lược khác trong lần tối ưu tiếp theo)
@@ -65,12 +66,12 @@ SMEM per block: 49152 byte
     - Scatter k = 1 (inprocess) - TODO
     - song song quá trình tính hist và scan trong cùng 1 kernal
 
-* 23/9: baseline 3: 
+* 23/9: baseline 3:
     - đã tiến hành song song phần tính hist bằng một kernal khác với các phiên bản trước là các bước cấp phát và copy thực hiện 1 lần trong hàm sort chứ k đơn giản là thực hiện gọi các hàm trong các bài trước. Kết quả `5018.378 ms` có thể là do chạy counting sort nhiều lần nên chậm hơn các phiên bản trước.
     - TODO làm phần scan song song hóa trên mảng 0-1
     - Thử cài đặt lại các bước song song của thuật toán radix cải tiến.
 
-* 25/9: baseline 3: 
+* 25/9: baseline 3:
     - đã tiến hành song song theo các bước trong slide 19-21 cả host code và device code kết quả thời gian chạy `4709.280 ms`
     - TODO: cải tiến phần cấp phát bộ nhớ 1 lần, hiện tại mỗi lần gọi hàm scan sẽ cấp phát bộ nhớ nhiều lần
     - TODO: k > 1
@@ -95,4 +96,8 @@ SMEM per block: 49152 byte
 * 30/9 baseline 3:
     - test scatter Fail
     - Cần check lại hàm scatter hoặc code lại, theo ý tưởng khác
-    
+
+* 2/10 baseline 3:
+    - fix lại cách tính rank khi scatter do hiểu lầm. Trong nội bộ mỗi block chỉ cần đếm số phần tử có digit bằng nó bên trái + với vị trí bắt đầu tương ứng trong mảng scans là sẽ ra rank thật sự
+    - TODO test scatter
+    - TODO chạy và báo cáo kết quả
