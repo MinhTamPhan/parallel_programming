@@ -17,7 +17,7 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
     // Loop from LSD (Least Significant Digit) to MSD (Most Significant Digit)
     // (Each digit consists of nBits bit)
-    // In each loop, sort elements according to the current digit from src to dst 
+    // In each loop, sort elements according to the current digit from src to dst
     // (using STABLE counting sort)
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
         // TODO: Compute histogram
@@ -31,7 +31,7 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
         // }
         dim3 blockSize(512); // Default
         computeHistDevice(src, n, hist, nBins, true, blockSize, 1, bit);
-        
+
 
         // TODO: Scan histogram (exclusively)
         // TODO: Compute histogram by device
@@ -55,7 +55,7 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
     }
 
     // Copy result to out
-    memcpy(out, src, n * sizeof(uint32_t)); 
+    memcpy(out, src, n * sizeof(uint32_t));
 
     // Free memory
     free(originalSrc);
@@ -65,7 +65,7 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 
 // Radix Sort
 void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int blockSize=1) {
-    GpuTimer timer; 
+    GpuTimer timer;
     timer.Start();
 
     if (useDevice == false) {

@@ -1,34 +1,5 @@
 #include "../src/helper.cuh"
 
-__global__ void scanKernel(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int nBins, int bit) {
-    // TODO
-    // 1. Each block loads data from GMEM to SMEM
-    extern __shared__ int s_data[]; // Size: blockDim.x element
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n && i > 0)
-        s_data[threadIdx.x] = ((in[i - 1] >> bit) & (nBins - 1));
-    else
-        s_data[threadIdx.x] = 0;
-    __syncthreads();
-
-    // 2. Each block does scan with data on SMEM
-    for (int stride = 1; stride < blockDim.x; stride *= 2) {
-        int neededVal;
-        if (threadIdx.x >= stride)
-            neededVal = s_data[threadIdx.x - stride];
-        __syncthreads();
-        if (threadIdx.x >= stride)
-            s_data[threadIdx.x] += neededVal;
-        __syncthreads();
-    }
-
-    // 3. Each block write results from SMEM to GMEM
-    if (i < n)
-        out[i] = s_data[threadIdx.x];
-    if (blkSums != nullptr && threadIdx.x == 0)
-        blkSums[blockIdx.x] = s_data[blockDim.x - 1];
-}
-
 __global__ void computeHist(uint32_t *in, int n, uint32_t *hist, int nBins, int bit) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t *pIn = &in[blockDim.x * blockIdx.x];
@@ -100,28 +71,28 @@ http://developer.download.nvidia.com/CUDA/training/NVIDIA_GPU_Computing_Webinars
 __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, int nBins, int bit, int withScan) {
     // TODO
     // ý tưởng đùng SMEM mỗi thread sẽ tự tính rank cho phần tử mình phụ trách
-    // Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử nhỏ hoặc bằng mình gọi là left
-    // mỗi thread lặp từ threadId của mình + 1 đến max bên phải (nhớ ngưỡng tràn block biên) đếm có bao nhiêu phần tử nhỏ mình gọi là right
-    // rank[threadId] = left + right // gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
-    extern __shared__ int s_data[]; // Size: blockDim.x * 2 element default = 0, link tham khảo ở trên
+    // Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử bằng mình gọi là left
+    // rank[threadId] = left ;// gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
+    extern __shared__ int s_data[]; // Size: blockDim.x element default = 0, link tham khảo ở trên
     int* left = &s_data[0];
     int begin = blockIdx.x * blockDim.x;
-    for(int i = begin; i < begin + threadIdx.x && i < n; i++) {
-        if (begin + threadIdx.x < n && in[i] <= in[begin + threadIdx.x]) {
-            left[threadIdx.x]++; // không cần syncthreads, hay atomic vì các thread chạy độc lập
-        }
+    int idx = threadIdx.x + begin;
+    if (idx < n) { // nếu vị trí cần xét còn trong mảng hợp lệ
+		int digit = (in[idx] >> bit) & (nBins - 1); // lấy digit ở phần tử của thread đang xét;
+		int j = begin; // duyệt từ vị trí bắt đầu tới phần tử của thread đang xét
+        while (j < n && j < idx) {
+			int jdigit = (in[j] >> bit) & (nBins - 1); // lấy digit của phần tử đang tính
+			if ( digit == jdigit)
+				left[threadIdx.x]++;  // không cần syncthreads, hay atomic vì các thread chạy độc lập
+			j++; // các biến j là biến cục bộ của mỗi thread, việc cộng thêm ở thread này k ảnh hưởng tới thread khác
+		}
     }
-    // // tương tự vòng for trên nhưng tính cho bần bên phải
-    for(int i = begin + threadIdx.x + 1; i < begin + blockDim.x && i < n; i++) {
-        if (begin + threadIdx.x < n && in[i] < in[begin + threadIdx.x]) {
-            right[threadIdx.x]++; // không cần syncthreads vì các thread chạy độc lập
-        }
-    }
-    if (begin + threadIdx.x < n) {
-        int digit = (in[begin + threadIdx.x] >> bit) & (nBins - 1); // lấy digit dang xét
-        int begin_out = scans[digit * withScan + blockIdx.x];
-        int rank = begin_out + right[threadIdx.x] + left[threadIdx.x];
-        out[rank] = in[begin + threadIdx.x];
+
+    if (idx < n) {
+		int digit = (in[idx] >> bit) & (nBins - 1);  // lấy digit của phần tử dang xét
+        int begin_out = scans[digit * blockDim.x + blockIdx.x];
+        int rank = begin_out + left[threadIdx.x];
+        out[rank] = in[idx];
     }
 }
 
@@ -178,7 +149,7 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
             CHECK(cudaGetLastError());
             free(h_blkSums);
         }
-        int smemScatter = 2 * blockSize.x * sizeof(uint32_t);
+        int smemScatter = blockSize.x * sizeof(uint32_t);
         scatter<<<gridSize, blockSize, smemScatter>>>(d_in, d_scan, n, d_out, nBins, bit, gridSize.x);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
