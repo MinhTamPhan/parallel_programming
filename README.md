@@ -101,3 +101,9 @@ SMEM per block: 49152 byte
     - fix lại cách tính rank khi scatter do hiểu lầm. Trong nội bộ mỗi block chỉ cần đếm số phần tử có digit bằng nó bên trái + với vị trí bắt đầu tương ứng trong mảng scans là sẽ ra rank thật sự
     - TODO test scatter
     - TODO chạy và báo cáo kết quả
+
+* 4/10 baseline 3:
+    - test scatter đúng, đang fix các tham số.
+    - TODO tổng quát hóa lại các tham số
+    - TODO start baseline 4
+

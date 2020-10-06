@@ -57,7 +57,7 @@ struct GpuTimer
 };
 
 // Parallel Radix Sort
-void sortByThrust(const uint32_t * in, int n, uint32_t * out, int blockSize) {
+void sortByThrust(const uint32_t * in, int n, uint32_t * out) {
     // TODO
     thrust::device_vector<uint32_t> dv_out(in, in + n);
     thrust::sort(dv_out.begin(), dv_out.end());
