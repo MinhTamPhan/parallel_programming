@@ -76,7 +76,6 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
     extern __shared__ int s_data[]; // Size: blockDim.x element default = 0, link tham khảo ở trên
     int* left = &s_data[0];
     left[threadIdx.x] = 0;
-    // __syncthreads();
     int begin = blockIdx.x * blockDim.x;
     int idx = threadIdx.x + begin;
     if (idx < n) { // nếu vị trí cần xét còn trong mảng hợp lệ
@@ -96,13 +95,6 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
         int rank = begin_out + left[threadIdx.x];
         out[rank] = in[idx];
     }
-    // __syncthreads();
-    // if (threadIdx.x == 0){
-    //     for (size_t i = 0; i < 12; i++) {
-    //         printf("%d \t", scans[i]);
-    //     }
-    // }
-    
 }
 
 
@@ -141,23 +133,6 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
         scanBlkKernelCnt<<<gridSize, blockSize, smemScan>>>(d_hist_t, nBins * gridSize.x , d_scan, d_blkSums, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        // if (gridSize.x > 1) {
-        //     // 2. Compute each block's previous sum
-        //     //    by scanning array of blocks' sums
-        //     size_t temp =  gridSize.x * sizeof(int);
-        //     int * h_blkSums = (int*)malloc(temp);
-        //     CHECK(cudaMemcpy(h_blkSums, d_blkSums, temp, cudaMemcpyDeviceToHost));
-        //     for (int i = 1; i < gridSize.x; i++)
-        //         h_blkSums[i] += h_blkSums[i-1];
-        //     CHECK(cudaMemcpy(d_blkSums, h_blkSums, temp, cudaMemcpyHostToDevice));
-
-        //     // 3. Add each block's previous sum to its scan result in step 1
-        //     addPrevBlkSumCnt<<<gridSize.x - 1, nBins>>>(d_blkSums, d_scan, 12);
-        //     CHECK(cudaDeviceSynchronize());
-        //     CHECK(cudaGetLastError());
-        //     free(h_blkSums);
-        // }
-
         int smemScatter = blockSize.x * sizeof(uint32_t);
         scatter<<<gridSize, blockSize, smemScatter>>>(d_in, d_scan, n, d_out, nBins, bit, gridSize.x);
         CHECK(cudaDeviceSynchronize());
