@@ -69,32 +69,32 @@ void scatterH(uint32_t * in, uint32_t * const scans , int n, uint32_t *out, int 
 int main(int argc, char ** argv) {
 
     // SET UP INPUT SIZE
-    int n = (1 << 24) + 1;
-    n = 100;
-    printf("\nInput size: %d\n", n);
+    // int n = (1 << 24) + 1;
+    // n = 100;
+    // printf("\nInput size: %d\n", n);
 
-    // ALLOCATE MEMORIES
-    int k = 2;
-    int nBins = 1 << k;
-    uint32_t * in = new uint32_t[n];
-    uint32_t * out = new uint32_t[n]; // Device result
-    uint32_t * histOut = new uint32_t[nBins * 3];
-    uint32_t * histTranspose =  new uint32_t[nBins * 3];
-    uint32_t * histScan = new uint32_t[nBins * 3];
-    // SET UP INPUT DATA
-    for (int i = 0; i < n; i++)
-        in[i] = rand();
-    uint32_t * src = new uint32_t[n];
-    uint32_t * originalSrc = src; // To free memory later
-    memcpy(src, in, n * sizeof(uint32_t));
-    uint32_t * dst = out;
+    // // ALLOCATE MEMORIES
+    // int k = 2;
+    // int nBins = 1 << k;
+    // uint32_t * in = new uint32_t[n];
+    // uint32_t * out = new uint32_t[n]; // Device result
+    // uint32_t * histOut = new uint32_t[nBins * 3];
+    // uint32_t * histTranspose =  new uint32_t[nBins * 3];
+    // uint32_t * histScan = new uint32_t[nBins * 3];
+    // // SET UP INPUT DATA
+    // for (int i = 0; i < n; i++)
+    //     in[i] = rand();
+    // uint32_t * src = new uint32_t[n];
+    // uint32_t * originalSrc = src; // To free memory later
+    // memcpy(src, in, n * sizeof(uint32_t));
+    // uint32_t * dst = out;
 
     // for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
     //     memset(histOut, 0 , 3 * nBins * sizeof(int));
     //     hist(src, 49, histOut, bit, nBins);
     //     hist(&src[49], 49, histOut + nBins, bit, nBins);
     //     hist(&src[49 * 2], 2, histOut + nBins * 2, bit, nBins);
-       
+
     //     transposeHist(histOut, 3, nBins, histTranspose); // 3 dòng nBins cột
     //     histScan[0] = 0;
     //     for (int bin = 1; bin < nBins * 3; bin++)
@@ -112,25 +112,45 @@ int main(int argc, char ** argv) {
     // printf("===========================================\n");
     // Copy result to out
     // memcpy(out, src, n * sizeof(uint32_t));
-    // printArray(out, 100);
-    printf("===========================================\n");
-    uint32_t * outd = new uint32_t[n]; // Device result
-    radixSortLv1NoShared(in, n, outd, k);
-    printf("\nRadix Sort by device\n");
-    sortByThrust(in, n, out);
-    // sort(in, in + n);
-//    printArray(out, 100);
-    checkCorrectness(out, outd, n);
+	// printArray(out, 100);
 
-    // checkCorrectness(in, outd, n);
+	 // SET UP INPUT SIZE
+	int n = (1 << 24) + 1;
+	int k = 2;
+	if (argc <= 2)
+		blockSize = atoi(argv[1]);
+	uint32_t * in = new uint32_t[n];
+	uint32_t * outImp = new uint32_t[n];
+	uint32_t * outThrus = new uint32_t[n];
+
+	int nLoop = 20;
+	GpuTimer timer;
+	float time;
+	float avgTimeImp = 0, avgThrus = 0;
+	while(nLoop --){
+		for (int i = 0; i < n; i++)
+			in[i] = rand();
+		printf("radixSortLv1 my implement.Input size: %d\n, k = %d, nLoop = %d", n, k, nLoop);
+		timer.Start();
+		radixSortLv1(in, n, outImp, k);
+		timer.Stop();
+		time = timer.Elapsed();
+		avgTime += time / 20;
+		printf("Time: %.3f ms\n", time);
+		printf("Radix Sort by Thrust\n");
+		timer.Start();
+		sortByThrust(in, n, outThrus);
+		time = timer.Elapsed();
+		printf("Time sortByThrust: %.3f ms\n",time);
+		avgThrus += time / 20;
+		checkCorrectness(outImp, outThrus);
+	}
+
 
     // FREE MEMORIES
     delete in;
-    delete out;
+    delete outImp;
     delete histOut;
-    delete histTranspose;
-    delete histScan;
-    delete originalSrc;
-
+    delete outThrus;
     return 0;
 }

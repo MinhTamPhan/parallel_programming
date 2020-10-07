@@ -86,15 +86,13 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
 }
 
 
-void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
-    dim3 blockSize(49);
-    //dim3 blockSize(512); // Default
+void radixSortLv1SharedTranspose(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
+
     dim3 gridSize((n - 1) / blockSize.x + 1);
     // int nBits = k;
     int nBins = 1 << k;
     size_t nBytes = n * sizeof(uint32_t), hByte = nBins * sizeof(uint32_t) * gridSize.x;
     uint32_t *d_in, *d_hist, *d_scan, *d_blkSums, *d_out;
-    uint32_t *d_hist_t;
 
     uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t * originalSrc = src; // To free memory later
@@ -103,8 +101,7 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
 
     CHECK(cudaMalloc(&d_in, nBytes));
     CHECK(cudaMalloc(&d_out, nBytes));
-    CHECK(cudaMalloc(&d_hist, hByte));
-    CHECK(cudaMalloc(&d_hist_t, hByte));
+    CHECK(cudaMalloc(&d_hist, hByte)) transpose;
     CHECK(cudaMalloc(&d_scan, hByte));
     CHECK(cudaMalloc(&d_blkSums, sizeof(uint32_t) * 3));
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
@@ -115,10 +112,12 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
         CHECK(cudaGetLastError());
 
         int smemScan = nBins * gridSize.x * sizeof(uint32_t);
-        scanBlkKernelCnt<<<gridSize.x, nBins, smemScan>>>(d_hist_t, nBins * gridSize.x , d_scan, d_blkSums, nBins, bit);
+        dim3 blockSizeScan(512);
+        dim3 gridSizeScan((gridSize.x * nBins - 1) / blockSize.x + 1);
+        scanBlkKernelCnt<<<gridSizeScan, blockSizeScan, smemScan>>>(d_hist, nBins * gridSize.x , d_scan, d_blkSums, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        if (gridSize.x > 1) {
+        if (gridSizeScan.x > 1) {
             // 2. Compute each block's previous sum
             //    by scanning array of blocks' sums
             size_t temp =  gridSize.x * sizeof(int);
@@ -129,7 +128,7 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
             CHECK(cudaMemcpy(d_blkSums, h_blkSums, temp, cudaMemcpyHostToDevice));
 
             // 3. Add each block's previous sum to its scan result in step 1
-            addPrevBlkSumCnt<<<gridSize.x - 1, nBins>>>(d_blkSums, d_scan, 12);
+            addPrevBlkSumCnt<<<gridSizeScan.x - 1, nBins>>>(d_blkSums, d_scan, 12);
             CHECK(cudaDeviceSynchronize());
             CHECK(cudaGetLastError());
             free(h_blkSums);

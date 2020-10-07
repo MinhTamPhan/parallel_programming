@@ -98,9 +98,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
 }
 
 
-void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
-    dim3 blockSize(49);
-    //dim3 blockSize(512); // Default
+void radixSortLv1(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
     dim3 gridSize((n - 1) / blockSize.x + 1);
     // int nBits = k;
     int nBins = 1 << k;
@@ -125,14 +123,33 @@ void radixSortLv1NoShared(const uint32_t * in, int n, uint32_t * out, int k) {
         computeHist<<<gridSize, blockSize>>>(d_in, n, d_hist, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
-        transpose_naive<<<3, 4>>>(d_hist_t, d_hist, nBins, gridSize.x);
+        transpose_naive<<<gridSize.x, nBins>>>(d_hist_t, d_hist, nBins, gridSize.x);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
 
         int smemScan = gridSize.x * nBins  * sizeof(uint32_t);
+        dim3 blockSizeScan(512);
+        dim3 gridSizeScan((gridSize.x * nBins - 1) / blockSize.x + 1);
         scanBlkKernelCnt<<<gridSize, blockSize, smemScan>>>(d_hist_t, nBins * gridSize.x , d_scan, d_blkSums, nBins, bit);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
+        if (gridSizeScan.x > 1) {
+            // 2. Compute each block's previous sum
+            //    by scanning array of blocks' sums
+            size_t temp =  gridSize.x * sizeof(int);
+            int * h_blkSums = (int*)malloc(temp);
+            CHECK(cudaMemcpy(h_blkSums, d_blkSums, temp, cudaMemcpyDeviceToHost));
+            for (int i = 1; i < gridSize.x; i++)
+                h_blkSums[i] += h_blkSums[i-1];
+            CHECK(cudaMemcpy(d_blkSums, h_blkSums, temp, cudaMemcpyHostToDevice));
+
+            // 3. Add each block's previous sum to its scan result in step 1
+            addPrevBlkSumCnt<<<gridSizeScan.x - 1, nBins>>>(d_blkSums, d_scan, gridSize.x * nBins);
+            CHECK(cudaDeviceSynchronize());
+            CHECK(cudaGetLastError());
+            free(h_blkSums);
+        }
+
         int smemScatter = blockSize.x * sizeof(uint32_t);
         scatter<<<gridSize, blockSize, smemScatter>>>(d_in, d_scan, n, d_out, nBins, bit, gridSize.x);
         CHECK(cudaDeviceSynchronize());
