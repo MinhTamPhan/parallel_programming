@@ -1,6 +1,4 @@
-// #include <algorithm>
 #include  "../baseline/radix_sort_lv1_fix.cuh"
-using namespace std;
 
 void hist(uint32_t * in, int n, uint32_t *hist, int bit, int nBins) {
     int bin;
@@ -115,45 +113,52 @@ int main(int argc, char ** argv) {
 	// printArray(out, 100);
 
 	 // SET UP INPUT SIZE
+    
 	int n = (1 << 24) + 1;
-	int k = 2;
+    // n = 100;
+	int k = 8;
 	dim3 blockSize = dim3(512);
-	if (argc <= 2)
+	if (argc >= 2){
 		blockSize = atoi(argv[1]);
-	uint32_t * in = new uint32_t[n];
-	uint32_t * outImp = new uint32_t[n];
-	uint32_t * outThrus = new uint32_t[n];
+    }
+    size_t bytes = n * sizeof(uint32_t);
+	uint32_t * in =  (uint32_t *)malloc(bytes);
+	uint32_t * outImp =  (uint32_t *)malloc(bytes);
+	uint32_t * outThrus = (uint32_t *)malloc(bytes);
 
 	int nLoop = 20;
 	GpuTimer timer;
 	float time;
 	float avgTimeImp = 0, avgThrus = 0;
-	while(nLoop --){
+    int loop = 0;
+	while(loop < nLoop) {
 		for (int i = 0; i < n; i++)
 			in[i] = rand();
-		printf("radixSortLv1 my implement.Input size: %d, k = %d, nLoop = %d\n", n, k, nLoop);
+		printf("radixSortLv1 my implement.Input size: %d, k = %d, nLoop = %d\n\n\n", n, k, nLoop);
 		timer.Start();
-		radixSortLv1(in, n, outImp, k);
+		radixSortLv1(in, n, outImp, k, blockSize);
 		timer.Stop();
 		time = timer.Elapsed();
-		avgTimeImp += time / 20;
-		printf("Time: %.3f ms\n", time);
+		avgTimeImp += time / nLoop;
+		printf("Time: %.3f ms\n\n\n", time);
 		printf("Radix Sort by Thrust\n");
 		timer.Start();
 		sortByThrust(in, n, outThrus);
+        timer.Stop();
 		time = timer.Elapsed();
 		printf("Time sortByThrust: %.3f ms\n",time);
-		avgThrus += time / 20;
+		avgThrus += time / nLoop;
 		checkCorrectness(outImp, outThrus, n);
+        loop++;
 	}
 
 	printf("avgTimeImp: %f\n", avgTimeImp);
 	printf("avgThrus: %f\n", avgThrus);
 
     // FREE MEMORIES
-    delete in;
-    delete outImp;
-    delete outImp;
-    delete outThrus;
-    return 0;
+    free(in);
+    free(outImp);
+    free(outImp);
+    free(outThrus);
+    return EXIT_SUCCESS;
 }
