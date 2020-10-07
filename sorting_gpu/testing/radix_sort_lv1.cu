@@ -117,6 +117,7 @@ int main(int argc, char ** argv) {
 	 // SET UP INPUT SIZE
 	int n = (1 << 24) + 1;
 	int k = 2;
+	dim3 blockSize = dim3(512);
 	if (argc <= 2)
 		blockSize = atoi(argv[1]);
 	uint32_t * in = new uint32_t[n];
@@ -130,12 +131,12 @@ int main(int argc, char ** argv) {
 	while(nLoop --){
 		for (int i = 0; i < n; i++)
 			in[i] = rand();
-		printf("radixSortLv1 my implement.Input size: %d\n, k = %d, nLoop = %d", n, k, nLoop);
+		printf("radixSortLv1 my implement.Input size: %d, k = %d, nLoop = %d\n", n, k, nLoop);
 		timer.Start();
 		radixSortLv1(in, n, outImp, k);
 		timer.Stop();
 		time = timer.Elapsed();
-		avgTime += time / 20;
+		avgTimeImp += time / 20;
 		printf("Time: %.3f ms\n", time);
 		printf("Radix Sort by Thrust\n");
 		timer.Start();
@@ -143,14 +144,16 @@ int main(int argc, char ** argv) {
 		time = timer.Elapsed();
 		printf("Time sortByThrust: %.3f ms\n",time);
 		avgThrus += time / 20;
-		checkCorrectness(outImp, outThrus);
+		checkCorrectness(outImp, outThrus, n);
 	}
 
+	printf("avgTimeImp: %f\n", avgTimeImp);
+	printf("avgThrus: %f\n", avgThrus);
 
     // FREE MEMORIES
     delete in;
     delete outImp;
-    delete histOut;
+    delete outImp;
     delete outThrus;
     return 0;
 }

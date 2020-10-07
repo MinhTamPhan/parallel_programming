@@ -164,4 +164,10 @@ void radixSortLv1(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 bl
     // Copy result to out
     memcpy(out, src, nBytes);
     // Free memory
+    CHECK(cudaFree(&d_in));
+    CHECK(cudaFree(&d_out));
+    CHECK(cudaFree(&d_hist));
+    CHECK(cudaFree(&d_hist_t));
+    CHECK(cudaFree(&d_scan));
+    CHECK(cudaFree(&d_blkSums));
 }
