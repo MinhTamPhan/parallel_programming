@@ -55,15 +55,6 @@ __global__ void addPrevBlkSumCnt(uint32_t * blkSumsScan, uint32_t * blkScans, in
         blkScans[i] += blkSumsScan[blockIdx.x];
 }
 
-/*
-**
-shared memory: number of bytes per block
-for extern smem variables declared without size
-© NVIDIA Corporation 2009
-Optional, 0 by default
-http://developer.download.nvidia.com/CUDA/training/NVIDIA_GPU_Computing_Webinars_Introduction_to_CUDA.pdf
-**
-*/
 
 // TODO: You can define necessary functions here
 __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, int nBins, int bit, int withScan) {
@@ -71,7 +62,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
     // ý tưởng đùng SMEM mỗi thread sẽ tự tính rank cho phần tử mình phụ trách
     // Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử bằng mình gọi là left
     // rank[threadId] = left ;// gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
-    extern __shared__ int s_data[]; // Size: blockDim.x element default = 0, link tham khảo ở trên
+    extern __shared__ int s_data[]; // Size: blockDim.x element default = 0
     int* left = &s_data[0];
     left[threadIdx.x] = 0;
     int begin = blockIdx.x * blockDim.x;
@@ -89,7 +80,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
 
     if (idx < n) {
 		int digit = (in[idx] >> bit) & (nBins - 1);  // lấy digit của phần tử dang xét
-        int begin_out = scans[digit * withScan + blockIdx.x];
+        int begin_out = scans[digit * withScan + blockIdx.x];//s_scan[digit];//scans[digit * withScan + blockIdx.x];
         int rank = begin_out + left[threadIdx.x];
         out[rank] = in[idx];
     }

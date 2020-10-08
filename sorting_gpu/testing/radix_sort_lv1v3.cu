@@ -85,6 +85,8 @@ int main(int argc, char ** argv) {
 		avgThrus += time / nLoop;
 		checkCorrectness(outImp, outThrus, n);
         loop++;
+        // return 0;
+        // break;
 	}
 
     printf("================================ avg time after %d run================================ \n", nLoop);
