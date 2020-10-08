@@ -1,26 +1,32 @@
 #include "../src/helper.cuh"
 
 __global__ void computeHistUseSMem(uint32_t *in, int n, uint32_t *hist, int nBins, int bit) {
-    extern __shared__ int s_hist[];
+
+    extern __shared__ uint32_t s_hist[];
+    if (threadIdx.x < nBins)
+        s_hist[threadIdx.x] = 0;
+    __syncthreads();
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     uint32_t *pIn = &in[blockDim.x * blockIdx.x];
-    uint32_t *pHist = &hist[nBins * blockIdx.x];
     if (i < n) {
         atomicAdd(&s_hist[(pIn[threadIdx.x] >> bit) & (nBins - 1)], 1);
     }
+    __syncthreads();
+    int width = (n - 1) / blockDim.x + 1;
     if (threadIdx.x < nBins)
-        hist[threadIdx.x * blockDim.x + blockIdx.x] = s_hist[threadIdx.x];
+        hist[threadIdx.x * width  + blockIdx.x] = s_hist[threadIdx.x];
 }
+
 
 __global__ void scanBlkKernelCnt(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums) {
     // 1. Each block loads data from GMEM to SMEM
-    extern __shared__ int s_data[];
+    extern __shared__ int s_data[]; // Size: blockDim.x element
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > 0 && i < n)
-        s_data[blockDim.x - 1 - threadIdx.x] = in[i - 1];
+    if (i < n && i > 0)
+        s_data[threadIdx.x] = in[i - 1];
     else
-        s_data[blockDim.x - 1 - threadIdx.x] = 0;
+        s_data[threadIdx.x] = 0;
     __syncthreads();
 
     // 2. Each block does scan with data on SMEM
@@ -67,6 +73,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
     // rank[threadId] = left ;// gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
     extern __shared__ int s_data[]; // Size: blockDim.x element default = 0, link tham khảo ở trên
     int* left = &s_data[0];
+    left[threadIdx.x] = 0;
     int begin = blockIdx.x * blockDim.x;
     int idx = threadIdx.x + begin;
     if (idx < n) { // nếu vị trí cần xét còn trong mảng hợp lệ
@@ -87,7 +94,6 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
         out[rank] = in[idx];
     }
 }
-
 
 void radixSortLv1V2(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
     dim3 gridSize((n - 1) / blockSize.x + 1);

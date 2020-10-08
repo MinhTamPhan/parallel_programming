@@ -134,24 +134,24 @@ int main(int argc, char ** argv) {
 	while(loop < nLoop) {
 		for (int i = 0; i < n; i++)
 			in[i] = rand();
-		printf("radixSortLv1 my implement.Input size: %d, k = %d, nLoop = %d\n\n\n", n, k, nLoop);
+		printf("radixSortLv1 my implement.Input size: %d, k = %d, nLoop = %d\n\n\n", n, k, loop + 1);
 		timer.Start();
 		radixSortLv1(in, n, outImp, k, blockSize);
 		timer.Stop();
 		time = timer.Elapsed();
 		avgTimeImp += time / nLoop;
-		printf("Time: %.3f ms\n\n\n", time);
-		printf("Radix Sort by Thrust\n");
+		// printf("Time: %.3f ms\n\n\n", time);
+		// printf("Radix Sort by Thrust\n");
 		timer.Start();
 		sortByThrust(in, n, outThrus);
         timer.Stop();
 		time = timer.Elapsed();
-		printf("Time sortByThrust: %.3f ms\n",time);
+		// printf("Time sortByThrust: %.3f ms\n",time);
 		avgThrus += time / nLoop;
 		checkCorrectness(outImp, outThrus, n);
         loop++;
 	}
-
+    printf("================================ avg time after %d run================================ \n", nLoop);
 	printf("avgTimeImp: %f\n", avgTimeImp);
 	printf("avgThrus: %f\n", avgThrus);
 
