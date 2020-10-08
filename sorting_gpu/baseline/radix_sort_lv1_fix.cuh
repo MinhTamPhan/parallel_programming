@@ -9,26 +9,6 @@ __global__ void computeHist(uint32_t *in, int n, uint32_t *hist, int nBins, int 
     }
 }
 
-__global__ void computeHistUseSMem(uint32_t *in, int n, uint32_t *hist, int nBins, int bit) {
-    extern __shared__ int s_data[];
-    int *s_in = &s_data[0];
-    int *s_hist = &s_data[blockDim.x];
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    // uint32_t *pIn = &in[blockDim.x * blockIdx.x];
-
-
-    uint32_t *pHist = &hist[nBins * blockIdx.x];
-    if (i < n) {
-        int digit = (s_in[threadIdx.x] >> bit) & (nBins - 1);
-        atomicAdd(&s_hist[digit], 1);
-    }
-    __syncthreads();
-    if (threadIdx.x < nBins) {
-        pHist[threadIdx.x] = s_hist[threadIdx.x];
-    }
-}
-
 __global__ void transpose_naive(uint32_t *odata, uint32_t* idata, int width, int height) {
     unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int xIndex = i % width;
