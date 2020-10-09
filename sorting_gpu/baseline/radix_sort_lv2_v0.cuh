@@ -89,7 +89,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
         }
         int nZeros = numEleInBlock - (inScan[numEleInBlock - 1] + ((src[numEleInBlock - 1] >> bit) & 1));
         int rank = ((src[threadIdx.x] >> bit) & 1) ? nZeros + inScan[i] : i - inScan[i];
-        dst[rank] = src[threadIdx.x];
+        dst[rank] = src[threadIdx.x]; 
         uint32_t * temp = src;
         src = dst;
         dst = temp;
