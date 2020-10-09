@@ -86,7 +86,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
     }
 }
 
-void radixSortLv1V2(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
+void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
     dim3 gridSize((n - 1) / blockSize.x + 1);
     // int nBits = k;
     int nBins = 1 << k;

@@ -84,7 +84,7 @@ void checkCorrectness(uint32_t * out, uint32_t * correctOut, int n) {
     for (int i = 0; i < n; i++) {
         if (out[i] != correctOut[i]) {
 
-            printf("INCORRECT :( out = %d, correctOut = %d\n", out[i] , correctOut[i]);
+            printf("INCORRECT :( out = %d, correctOut = %d, i = %d\n", out[i] , correctOut[i], i);
             return;
         }
     }

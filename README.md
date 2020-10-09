@@ -107,3 +107,17 @@ SMEM per block: 49152 byte
     - TODO tổng quát hóa lại các tham số
     - TODO start baseline 4
 
+* 6/10 baseline 3:
+    - test scatter đúng, đang fix các tham số.
+    - tổng quát hóa lại các tham số
+    - TODO xoay ma trận hist của block ngay trong lúc tính hist k cần viết thêm kernal transpose
+    - TODO Sửng đụng SMEM trong quá trình tính hist và scatter
+    - TODO start baseline 4
+
+* 8/10 baseline 3:
+    - test scatter đúng, đang fix các tham số.
+    - tổng quát hóa lại các tham số
+    - xoay ma trận hist của block ngay trong lúc tính hist k cần viết thêm kernal transpose
+    - Sửng đụng SMEM trong quá trình tính hist và scatter
+    - Nhận xét quan trọng giữa v2 và v3 việc sử dụng SMEM trong hàm scatter k giúp tăng tốc độ. Ngược lại trong v2 chạy rất tốt đo k có câu lệnh ```__syncthreads();``` nào trong hàm scatter. Ngược lại v3 cần 1 câu lệnh ```__syncthreads()``` làm cho tốc độ khá chậm. Đã test với block 512, k = 8, n = 2^24 + 1
+    - TODO start baseline 4
