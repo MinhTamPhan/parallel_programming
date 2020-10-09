@@ -63,27 +63,65 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
     // Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử bằng mình gọi là left
     // rank[threadId] = left ;// gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
     extern __shared__ int s_data[]; // Size: blockDim.x element default = 0
-    int* left = &s_data[0];
-    left[threadIdx.x] = 0;
-    int begin = blockIdx.x * blockDim.x;
-    int idx = threadIdx.x + begin;
-    if (idx < n) { // nếu vị trí cần xét còn trong mảng hợp lệ
-		int digit = (in[idx] >> bit) & (nBins - 1); // lấy digit ở phần tử của thread đang xét;
-		int j = begin; // duyệt từ vị trí bắt đầu tới phần tử của thread đang xét
-        while (j < n && j < idx) {
-			int jdigit = (in[j] >> bit) & (nBins - 1); // lấy digit của phần tử đang tính
-			if ( digit == jdigit)
-				left[threadIdx.x]++;  // không cần syncthreads, hay atomic vì các thread chạy độc lập
-			j++; // các biến j là biến cục bộ của mỗi thread, việc cộng thêm ở thread này k ảnh hưởng tới thread khác
-		}
+    int *src = s_data;
+    int *inScan = &s_data[blockDim.x];
+    int *dst = &s_data[blockDim.x * 2];
+    int *startPos = &s_data[blockDim.x * 3];
+    startPos[0] = 0;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n && i > 0)
+        s_data[threadIdx.x] = in[i - 1];
+    else
+        s_data[threadIdx.x] = 0;
+    __syncthreads();
+    int numEleInBlock =  blockDim.x;
+    // mỗi vòng for thực hiện couting sort với k = 1, trong nội bộ block của mình
+    for (size_t i = 0; i <= 2; i ++) {
+        // thực hiện exclusive
+        for (int stride = 1; stride < blockDim.x; stride *= 2) {
+            int neededVal;
+            if (threadIdx.x >= stride)
+                neededVal = ((s_data[threadIdx.x - stride]  >> bit) & 1);
+            __syncthreads();
+            if (threadIdx.x >= stride)
+                inScan[threadIdx.x] += neededVal;
+            __syncthreads();
+        }
+        int nZeros = numEleInBlock - (inScan[numEleInBlock - 1] + ((src[numEleInBlock - 1] >> bit) & 1));
+        int rank = ((src[threadIdx.x] >> bit) & 1) ? nZeros + inScan[i] : i - inScan[i];
+        dst[rank] = src[threadIdx.x];
+        uint32_t * temp = src;
+        src = dst;
+        dst = temp;
     }
+    // tính vị trí bắt đầu
+    if (threadIdx.x > 0) {
+        int currDigit =  (src[threadIdx.x] >> bit) & (nBins - 1));
+        int preDigit = (src[threadIdx.x - 1] >> bit) & (nBins - 1));
+        // nếu digit đang set khác với digit trước nó thì set giá trị vào rank vào mảng start pos
+        if (currDigit != preDigit) startPos[currDigit] = threadIdx.x;
+    }
+    // int* left = &s_data[0];
+    // left[threadIdx.x] = 0;
+    // int begin = blockIdx.x * blockDim.x;
+    // int idx = threadIdx.x + begin;
+    // if (idx < n) { // nếu vị trí cần xét còn trong mảng hợp lệ
+	// 	int digit = (in[idx] >> bit) & (nBins - 1); // lấy digit ở phần tử của thread đang xét;
+	// 	int j = begin; // duyệt từ vị trí bắt đầu tới phần tử của thread đang xét
+    //     while (j < n && j < idx) {
+	// 		int jdigit = (in[j] >> bit) & (nBins - 1); // lấy digit của phần tử đang tính
+	// 		if ( digit == jdigit)
+	// 			left[threadIdx.x]++;  // không cần syncthreads, hay atomic vì các thread chạy độc lập
+	// 		j++; // các biến j là biến cục bộ của mỗi thread, việc cộng thêm ở thread này k ảnh hưởng tới thread khác
+	// 	}
+    // }
 
-    if (idx < n) {
-		int digit = (in[idx] >> bit) & (nBins - 1);  // lấy digit của phần tử dang xét
-        int begin_out = scans[digit * withScan + blockIdx.x];//s_scan[digit];//scans[digit * withScan + blockIdx.x];
-        int rank = begin_out + left[threadIdx.x];
-        out[rank] = in[idx];
-    }
+    // if (idx < n) {
+	// 	int digit = (in[idx] >> bit) & (nBins - 1);  // lấy digit của phần tử dang xét
+    //     int begin_out = scans[digit * withScan + blockIdx.x];//s_scan[digit];//scans[digit * withScan + blockIdx.x];
+    //     int rank = begin_out + left[threadIdx.x];
+    //     out[rank] = in[idx];
+    // }
 }
 
 void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
