@@ -14,7 +14,7 @@
 //     __syncthreads();
 // }
 
-__global__ void scanKernel(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int nBins, int bit) {   
+__global__ void scanKernel(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int nBins, int bit) {
     // TODO
     // 1. Each block loads data from GMEM to SMEM
     extern __shared__ int s_data[]; // Size: blockDim.x element
@@ -65,7 +65,7 @@ void coutingSort2(const uint32_t * in, int n, uint32_t * out) {
     uint32_t *d_blkSums, *d_out;
     size_t nBytes = n * sizeof(uint32_t);
     CHECK(cudaMalloc(&d_in, nBytes));
-    CHECK(cudaMalloc(&d_out, nBytes)); 
+    CHECK(cudaMalloc(&d_out, nBytes));
     // Copy data to device memories
     dim3 blockSize(512);
     dim3 gridSize((n - 1) / blockSize.x + 1);
@@ -83,7 +83,7 @@ void coutingSort2(const uint32_t * in, int n, uint32_t * out) {
         CHECK(cudaGetLastError());
 
         if (gridSize.x > 1) {
-            // 2. Compute each block's previous sum 
+            // 2. Compute each block's previous sum
             //    by scanning array of blocks' sums
             // TODO
             size_t temp = gridSize.x * sizeof(int);
@@ -97,10 +97,10 @@ void coutingSort2(const uint32_t * in, int n, uint32_t * out) {
             //addPrevBlkSum<<<gridSize.x - 1, blockSize>>>(d_blkSums, d_out, n);
             CHECK(cudaDeviceSynchronize());
             CHECK(cudaGetLastError());
-            
+
             free(blkSums);
         }
-        
+
         CHECK(cudaMemcpy(inScan, d_out, nBytes, cudaMemcpyDeviceToHost));
         int nZeros = n - (inScan[n - 1] + ((in[n - 1] >> bit) & 1));
         int rank;
@@ -142,10 +142,10 @@ void coutingSort(const uint32_t * in, int n, uint32_t * out) {
 
     // Loop from LSD (Least Significant Digit) to MSD (Most Significant Digit)
     // (Each digit consists of nBits bit)
-    // In each loop, sort elements according to the current digit from src to dst 
+    // In each loop, sort elements according to the current digit from src to dst
     // (using STABLE counting sort)
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
-       
+
         dim3 blockSize(512); // Default
         inScan[0] = 0;
         // histScan[0] = 0;
@@ -155,7 +155,7 @@ void coutingSort(const uint32_t * in, int n, uint32_t * out) {
         scanExclusiveCounting(src, n, inScan, bit, true, dim3(blockSize));
         // scan(hist, nBins, histScan, true, dim3(nBins));
         // TODO: Scatter elements to correct locations
-        
+
         int rank;
         int nZeros = n - (inScan[n - 1] + ((src[n - 1] >> bit) & 1));
         for (int i = 0; i < n; i++) {
@@ -164,7 +164,7 @@ void coutingSort(const uint32_t * in, int n, uint32_t * out) {
             dst[rank] = src[i];
             // histScan[bin]++;
         }
-        
+
 
         // Swap src and dst
         uint32_t * temp = src;
@@ -173,7 +173,7 @@ void coutingSort(const uint32_t * in, int n, uint32_t * out) {
     }
 
     // Copy result to out
-    memcpy(out, src, n * sizeof(uint32_t)); 
+    memcpy(out, src, n * sizeof(uint32_t));
 
     // Free memory
     free(originalSrc);
@@ -192,12 +192,12 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
     uint32_t * originalSrc = src; // To free memory later
     memcpy(src, in, n * sizeof(uint32_t));
     uint32_t * dst = out;
-    
+
     dim3 blockSize(512); // Default
     uint32_t * d_in, * d_out, * d_blkSums;
     size_t nBytes = n * sizeof(uint32_t);
-    CHECK(cudaMalloc(&d_in, nBytes)); 
-    CHECK(cudaMalloc(&d_out, nBytes)); 
+    CHECK(cudaMalloc(&d_in, nBytes));
+    CHECK(cudaMalloc(&d_out, nBytes));
     dim3 gridSize((n - 1) / blockSize.x + 1);
 
     //CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
@@ -205,10 +205,10 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
 
     // Loop from LSD (Least Significant Digit) to MSD (Most Significant Digit)
     // (Each digit consists of nBits bit)
-    // In each loop, sort elements according to the current digit from src to dst 
+    // In each loop, sort elements according to the current digit from src to dst
     // (using STABLE counting sort)
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += nBits) {
-       
+
         //dim3 blockSize(512); // Default
         inScan[0] = 0;
         CHECK(cudaMemcpy(d_out, inScan, nBytes, cudaMemcpyHostToDevice));
@@ -230,7 +230,7 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
         CHECK(cudaGetLastError());
 
         if (gridSize.x > 1) {
-            // 2. Compute each block's previous sum 
+            // 2. Compute each block's previous sum
             //    by scanning array of blocks' sums
             // TODO
             size_t temp = gridSize.x * sizeof(int);
@@ -244,14 +244,14 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
             addPrevBlkSumCnt<<<gridSize.x - 1, blockSize>>>(d_blkSums, d_out, n);
             CHECK(cudaDeviceSynchronize());
             CHECK(cudaGetLastError());
-            
+
             free(blkSums);
         }
 
         CHECK(cudaMemcpy(inScan, d_out, nBytes, cudaMemcpyDeviceToHost));
         // scan(hist, nBins, histScan, true, dim3(nBins));
         // TODO: Scatter elements to correct locations
-        
+
         int rank;
         int nZeros = n - (inScan[n - 1] + ((src[n - 1] >> bit) & 1));
         for (int i = 0; i < n; i++) {
@@ -260,7 +260,7 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
             dst[rank] = src[i];
             // histScan[bin]++;
         }
-        
+
 
         // Swap src and dst
         uint32_t * temp = src;
@@ -269,7 +269,7 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
     }
 
     // Copy result to out
-    memcpy(out, src, n * sizeof(uint32_t)); 
+    memcpy(out, src, n * sizeof(uint32_t));
 
     // Free memory
     free(originalSrc);
@@ -284,7 +284,7 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
 
 // Radix Sort
 void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int blockSize=1) {
-    GpuTimer timer; 
+    GpuTimer timer;
     timer.Start();
 
     if (useDevice == false) {

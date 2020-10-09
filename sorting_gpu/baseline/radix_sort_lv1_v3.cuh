@@ -67,7 +67,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
     int* s_in = &s_data[blockDim.x * 2];
     int* s_scan = &s_data[blockDim.x * 3];
     left[threadIdx.x] = 0; // init
-    
+
     int begin = blockIdx.x * blockDim.x; // vị trí bắt đầu block đang xét
     int idx = threadIdx.x + begin;
     if (idx < n) {
@@ -77,7 +77,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
     for (size_t digit = threadIdx.x; digit < nBins; digit += blockDim.x) {
         if(digit < nBins) s_scan[digit] = scans[digit * withScan + blockIdx.x];
     }
-    
+
     __syncthreads();
     if (idx < n) { // nếu vị trí cần xét còn trong mảng hợp lệ
 		int digit = s_digit[threadIdx.x]; // lấy digit ở phần tử của thread đang xét;
@@ -102,7 +102,7 @@ void radixSortLv1V2(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     dim3 gridSize((n - 1) / blockSize.x + 1);
     // int nBits = k;
     int nBins = 1 << k;
-    
+
     int nhist = gridSize.x * nBins;
     size_t nBytes = n * sizeof(uint32_t), hByte = nhist * sizeof(uint32_t);
     uint32_t *d_in, *d_hist, *d_scan, *d_blkSums = nullptr, *d_out;
@@ -116,7 +116,7 @@ void radixSortLv1V2(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     CHECK(cudaMalloc(&d_out, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte));
     CHECK(cudaMalloc(&d_scan, hByte));
-   
+
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
         CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
         CHECK(cudaMemset(d_hist, 0, hByte));

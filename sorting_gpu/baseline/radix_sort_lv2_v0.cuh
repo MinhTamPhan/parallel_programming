@@ -128,7 +128,7 @@ void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     dim3 gridSize((n - 1) / blockSize.x + 1);
     // int nBits = k;
     int nBins = 1 << k;
-    
+
     int nhist = gridSize.x * nBins;
     size_t nBytes = n * sizeof(uint32_t), hByte = nhist * sizeof(uint32_t);
     uint32_t *d_in, *d_hist, *d_scan, *d_blkSums = nullptr, *d_out;
@@ -142,7 +142,7 @@ void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     CHECK(cudaMalloc(&d_out, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte));
     CHECK(cudaMalloc(&d_scan, hByte));
-   
+
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
         CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
         CHECK(cudaMemset(d_hist, 0, hByte));
