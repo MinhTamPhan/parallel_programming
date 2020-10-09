@@ -13,7 +13,7 @@ __global__ void computeHistUseSMem(uint32_t *in, int n, uint32_t *hist, int nBin
         atomicAdd(&s_hist[(pIn[threadIdx.x] >> bit) & (nBins - 1)], 1);
     }
     __syncthreads();
-    int width = (n - 1) / blockDim.x + 1;
+    int width = (n - 1) / blockDim.x + 1; // gridDim.x
     if (threadIdx.x < nBins)
         hist[threadIdx.x * width  + blockIdx.x] = s_hist[threadIdx.x];
 }
@@ -48,6 +48,78 @@ __global__ void scanBlkKernelCnt(uint32_t * in, int n, uint32_t * out, uint32_t 
 }
 
 
+__global__ void scanBlkKernelCnt222(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums) {
+    // 1. Each block loads data from GMEM to SMEM
+    extern __shared__ int s_data[]; // Size: blockDim.x element
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n && i > 0)
+        s_data[threadIdx.x] = in[i - 1];
+    else
+        s_data[threadIdx.x] = 0;
+    __syncthreads();
+
+	for (int stride = 1; stride < blockDim.x; stride *= 2) {
+		int index = (threadIdx.x + 1) * stride * 2 - 1;
+		if(index < 2 * blockDim.x)
+			s_data[index] += s_data[index - stride];
+		__syncthreads()
+	}
+
+    // 2. Each block does scan with data on SMEM
+    for (int stride = 1; stride < blockDim.x; stride *= 2) {
+        int neededVal;
+        if (threadIdx.x >= stride)
+            neededVal = s_data[threadIdx.x - stride];
+        __syncthreads();
+        if (threadIdx.x >= stride)
+            s_data[threadIdx.x] += neededVal;
+        __syncthreads();
+    }
+
+    // 3. Each block write results from SMEM to GMEM
+    if (i < n)
+        out[i] = s_data[threadIdx.x];
+    if (blkSums != nullptr && threadIdx.x == 0)
+        blkSums[blockIdx.x] = s_data[blockDim.x - 1];
+}
+
+
+__global__ void prescan(float *g_odata, float *g_idata, int n) {
+
+	extern __shared__ float temp[];  // allocated on invocation
+	int thid = threadIdx.x; int offset = 1;
+
+	temp[2 * thid] = g_idata[ 2 * thid]; // load input into shared memory temp[2*thid+1] = g_idata[2*thid+1];
+
+	for (int d = n>>1; d > 0; d >>= 1)   // build sum in place up the tree
+	{
+		__syncthreads();
+		if (thid < d)    {
+
+			int ai = offset*(2*thid+1)-1;
+			int bi = offset*(2*thid+2)-1;
+
+			temp[bi] += temp[ai];
+		}
+		offset *= 2;
+	}
+
+	if (thid == 0) { temp[n - 1] = 0; } // clear the last element
+
+	for (int d = 1; d < n; d *= 2) // traverse down tree & build scan
+	{
+		offset >>= 1;
+		__syncthreads();
+		if (thid < d) {
+			int ai = offset*(2*thid+1)-1;     int bi = offset*(2*thid+2)-1;
+
+	 		float t = temp[ai]; temp[ai] = temp[bi]; temp[bi] += t;
+		}
+	}
+	__syncthreads();
+	g_odata[2*thid] = temp[2*thid]; // write results to device memory      g_odata[2*thid+1] = temp[2*thid+1];
+}
+
 // TODO: You can define necessary functions here
 __global__ void addPrevBlkSumCnt(uint32_t * blkSumsScan, uint32_t * blkScans, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + blockDim.x;
@@ -73,7 +145,7 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
         while (j < n && j < idx) {
 			int jdigit = (in[j] >> bit) & (nBins - 1); // lấy digit của phần tử đang tính
 			if ( digit == jdigit)
-				left[threadIdx.x]++;  // không cần syncthreads, hay atomic vì các thread chạy độc lập
+			left[threadIdx.x]++;  // không cần syncthreads, hay atomic vì các thread chạy độc lập
 			j++; // các biến j là biến cục bộ của mỗi thread, việc cộng thêm ở thread này k ảnh hưởng tới thread khác
 		}
     }
@@ -90,7 +162,7 @@ void radixSortLv1V2(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     dim3 gridSize((n - 1) / blockSize.x + 1);
     // int nBits = k;
     int nBins = 1 << k;
-    
+
     int nhist = gridSize.x * nBins;
     size_t nBytes = n * sizeof(uint32_t), hByte = nhist * sizeof(uint32_t);
     uint32_t *d_in, *d_hist, *d_scan, *d_blkSums = nullptr, *d_out;
@@ -104,7 +176,7 @@ void radixSortLv1V2(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     CHECK(cudaMalloc(&d_out, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte));
     CHECK(cudaMalloc(&d_scan, hByte));
-   
+
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
         CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
         CHECK(cudaMemset(d_hist, 0, hByte));
