@@ -47,7 +47,6 @@ __global__ void scanBlkKernelCnt(uint32_t * in, int n, uint32_t * out, uint32_t 
         blkSums[blockIdx.x] = s_data[blockDim.x - 1];
 }
 
-
 __global__ void scanBlkKernelCnt222(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums) {
     // 1. Each block loads data from GMEM to SMEM
     extern __shared__ int s_data[]; // Size: blockDim.x element
