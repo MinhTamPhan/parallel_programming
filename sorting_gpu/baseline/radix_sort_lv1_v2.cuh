@@ -61,7 +61,7 @@ __global__ void scanBlkKernelCnt222(uint32_t * in, int n, uint32_t * out, uint32
 		int index = (threadIdx.x + 1) * stride * 2 - 1;
 		if(index < 2 * blockDim.x)
 			s_data[index] += s_data[index - stride];
-		__syncthreads()
+		__syncthreads();
 	}
 
     // 2. Each block does scan with data on SMEM
@@ -151,8 +151,8 @@ __global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, i
 
     if (idx < n) {
 		int digit = (in[idx] >> bit) & (nBins - 1);  // lấy digit của phần tử dang xét
-        int begin_out = scans[digit * withScan + blockIdx.x];//s_scan[digit];//scans[digit * withScan + blockIdx.x];
-        int rank = begin_out + left[threadIdx.x];
+        int beginOut = scans[digit * withScan + blockIdx.x];//s_scan[digit];//scans[digit * withScan + blockIdx.x];
+        int rank = beginOut + left[threadIdx.x];
         out[rank] = in[idx];
     }
 }

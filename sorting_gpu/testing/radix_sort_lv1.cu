@@ -118,9 +118,12 @@ int main(int argc, char ** argv) {
     // n = 100;
 	int k = 8;
 	dim3 blockSize = dim3(512);
-	if (argc >= 2){
+	if (argc >= 2)
 		blockSize = atoi(argv[1]);
-    }
+    
+    if (argc >= 3)
+		k = atoi(argv[2]);
+    
     size_t bytes = n * sizeof(uint32_t);
 	uint32_t * in =  (uint32_t *)malloc(bytes);
 	uint32_t * outImp =  (uint32_t *)malloc(bytes);
@@ -134,7 +137,7 @@ int main(int argc, char ** argv) {
 	while(loop < nLoop) {
 		for (int i = 0; i < n; i++)
 			in[i] = rand();
-		printf("radixSortLv1 my implement.Input size: %d, k = %d, nLoop = %d\n\n\n", n, k, loop + 1);
+		printf("radixSortLv1 my implement.Input size: %d, k = %d, nLoop = %d blockSize %d\n\n\n", n, k, loop + 1, blockSize);
 		timer.Start();
 		radixSortLv1(in, n, outImp, k, blockSize);
 		timer.Stop();

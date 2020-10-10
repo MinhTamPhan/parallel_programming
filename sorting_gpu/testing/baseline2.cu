@@ -16,27 +16,32 @@ int main(int argc, char ** argv) {
     uint32_t * in = (uint32_t *)malloc(bytes);
     uint32_t * out = (uint32_t *)malloc(bytes); // Device result
     uint32_t * correctOut = (uint32_t *)malloc(bytes); // Host result
-
-    // SET UP INPUT DATA
-    for (int i = 0; i < n; i++)
-        //in[i] = rand() % 255; // For test by eye
-        in[i] = rand();
-    //printArray(in, n); // For test by eye
-
-    // DETERMINE BLOCK SIZE
     int blockSize = 512; // Default 
     if (argc == 2)
         blockSize = atoi(argv[1]);
+    // SET UP INPUT DATA
+    double timeH = 0, timeD = 0;
+    for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < n; i++)
+            //in[i] = rand() % 255; // For test by eye
+            in[i] = rand();
+        //printArray(in, n); // For test by eye
 
-    // SORT BY HOST
-    sort(in, n, correctOut);
-    //printArray(correctOut, n); // For test by eye
+        // DETERMINE BLOCK SIZE
     
-    // SORT BY DEVICE
-    sort(in, n, out, true, blockSize);
-    //printArray(out, n); // For test by eye
-    checkCorrectness(out, correctOut, n);
 
+        // SORT BY HOST
+        timeH += sort(in, n, correctOut);
+        //printArray(correctOut, n); // For test by eye
+        
+        // SORT BY DEVICE
+        timeD += sort(in, n, out, true, blockSize);
+        //printArray(out, n); // For test by eye
+        checkCorrectness(out, correctOut, n);
+    }
+    printf("================================ avg time after %d run================================ \n", 20);
+	printf("avgTime host Imp (hist + scan parallel): %f ms\n", timeH / 20.0);
+	printf("avgThrus: %f ms\n", timeD/20.0);
     // FREE MEMORIES
     free(in);
     free(out);

@@ -1,23 +1,25 @@
 #include "../src/helper.cuh"
 
-__global__ void computeHistUseSMem(uint32_t *in, int n, uint32_t *hist, int nBins, int bit) {
-
-    extern __shared__ uint32_t s_hist[];
-    if (threadIdx.x < nBins)
-        s_hist[threadIdx.x] = 0;
-    __syncthreads();
-
+__global__ void computeHist(uint32_t *in, int n, uint32_t *hist, int nBins, int bit) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    uint32_t *pIn = &in[blockDim.x * blockIdx.x];
+    uint32_t *pIn = &in[blockDim.x * blockIdx.x];//lấy các phần tử trong block đàng xét
+    uint32_t *pHist = &hist[nBins * blockIdx.x];//khai báo hist của block nào 
     if (i < n) {
-        atomicAdd(&s_hist[(pIn[threadIdx.x] >> bit) & (nBins - 1)], 1);
+        atomicAdd(&pHist[(pIn[threadIdx.x] >> bit) & (nBins - 1)], 1);
     }
-    __syncthreads();
-    int width = (n - 1) / blockDim.x + 1;
-    if (threadIdx.x < nBins)
-        hist[threadIdx.x * width  + blockIdx.x] = s_hist[threadIdx.x];
 }
 
+__global__ void transpose_naive(uint32_t *odata, uint32_t* idata, int width, int height) {
+    unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int xIndex = i % width;
+    unsigned int yIndex = i % height;
+
+    if (xIndex < width && yIndex < height) {
+        unsigned int index_in  = xIndex + width * yIndex;
+        unsigned int index_out = yIndex + height * xIndex;
+        odata[index_out] = idata[index_in];
+    }
+}
 
 __global__ void scanBlkKernelCnt(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums) {
     // 1. Each block loads data from GMEM to SMEM
@@ -55,73 +57,94 @@ __global__ void addPrevBlkSumCnt(uint32_t * blkSumsScan, uint32_t * blkScans, in
         blkScans[i] += blkSumsScan[blockIdx.x];
 }
 
-
 // TODO: You can define necessary functions here
-__global__ void scatter(uint32_t * in, uint32_t * scans, int n, uint32_t *out, int nBins, int bit, int withScan) {
-    // TODO
-    // ý tưởng đùng SMEM mỗi thread sẽ tự tính rank cho phần tử mình phụ trách
-    // Mỗi thread lặp từ 0 đến threadId của mình đếm có bao nhiêu phần tử bằng mình gọi là left
-    // rank[threadId] = left ;// gọi là rank nội bộ. dùng rank này cộng với vị trí bắt đầu của digit đang xét có trong mảng scans sẽ ra rank thật sự trong mảng output
-    extern __shared__ int s_data[]; // Size: blockDim.x element default = 0
-    int *src = s_data;
-    int *inScan = &s_data[blockDim.x];
-    int *dst = &s_data[blockDim.x * 2];
-    int *startPos = &s_data[blockDim.x * 3];
-    int numEleInBlock = begin + blockDim.x > n ? n % blockDim.x : blockDim.x;
-    for (size_t i = threadIdx.x; i < nBins; i += blockDim.x)
-        startPos[threadIdx.x] = 0; // vị trí bắt đầu của các digit khởi tạo = 0
+__global__ void Scatter(uint32_t * in, int n, int nBits, int bit, int nBins, uint32_t *histScan, uint32_t * out)
+{
+    extern __shared__ int s_data[];
+    int * s_in = s_data;
+    int * s_hist = (int *)&s_in[blockDim.x];
+    int *dst = (int *)&s_hist[blockDim.x];
+    int *dst_ori = (int *)&dst[blockDim.x];
+    int *startIndex = (int *)&dst_ori[blockDim.x];
+    int * hist = (int *)&startIndex[blockDim.x];
+    int * scan = (int *)&hist[blockDim.x];
 
-    startPos[0] = 0;
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n && i > 0)
-        s_data[threadIdx.x] = in[i - 1];
-    else
-        s_data[threadIdx.x] = 0;
-    __syncthreads();
-
-    // mỗi vòng for thực hiện couting sort với k = 1, trong nội bộ block của mình
-    for (size_t i = 0; i <= 2; i ++) { /// giả sử k = 2
-        // thực hiện exclusive
-        for (int stride = 1; stride < blockDim.x; stride *= 2) {
-            int neededVal;
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (id < n)
+    {
+        s_in[threadIdx.x] = in[id];
+        s_hist[threadIdx.x] = (s_in[threadIdx.x] >> bit) & (nBins - 1); // lấy giá trị digit đang xét
+    }
+    else 
+        s_hist[threadIdx.x] = nBins - 1;
+    // TODO: B1 - sort radix with k = 1
+    for (int b = 0; b < nBits; b++)
+    {
+        // compute hist
+        hist[threadIdx.x] = (s_hist[threadIdx.x] >> b) & 1;
+        __syncthreads();
+        // scan
+        if (threadIdx.x == 0)
+            scan[0] = 0;
+        else
+            scan[threadIdx.x] = hist[threadIdx.x - 1];
+        __syncthreads();
+        for (int stride = 1; stride < blockDim.x; stride *= 2)
+        {
+            int val = 0;
             if (threadIdx.x >= stride)
-                neededVal = ((s_data[threadIdx.x - stride]  >> bit) & 1);
+                val = scan[threadIdx.x - stride];
             __syncthreads();
-            if (threadIdx.x >= stride)
-                inScan[threadIdx.x] += neededVal;
+            scan[threadIdx.x] += val;
             __syncthreads();
         }
-        int nZeros = numEleInBlock - (inScan[numEleInBlock - 1] + ((src[numEleInBlock - 1] >> bit) & 1));
-        int rank = ((src[threadIdx.x] >> bit) & 1) ? nZeros + inScan[i] : i - inScan[i];
-        dst[rank] = src[threadIdx.x];
-        uint32_t * temp = src;
-        src = dst;
-        dst = temp;
+        __syncthreads();
+        // scatter
+        int nZeros = blockDim.x - scan[blockDim.x - 1] - hist[blockDim.x - 1];
+        int rank = 0;
+        if (hist[threadIdx.x] == 0)
+            rank = threadIdx.x - scan[threadIdx.x];
+        else
+            rank = nZeros + scan[threadIdx.x];
+        dst[rank] = s_hist[threadIdx.x];
+        dst_ori[rank] = s_in[threadIdx.x];
+        __syncthreads();        
+        // copy or swap
+        s_hist[threadIdx.x] = dst[threadIdx.x];
+        s_in[threadIdx.x] = dst_ori[threadIdx.x];
     }
-    // tính vị trí bắt đầu
-    if (threadIdx.x > 0) {
-        int currDigit =  (src[threadIdx.x] >> bit) & (nBins - 1));
-        int preDigit = (src[threadIdx.x - 1] >> bit) & (nBins - 1));
-        // nếu digit đang set khác với digit trước nó thì set giá trị vào rank vào mảng start pos
-        if (currDigit != preDigit) startPos[currDigit] = threadIdx.x;
-	}
-	__syncthreads();
-    if (threadIdx.x < numEleInBlock) {
-		int digit = (src[threadIdx.x] >> bit) & (nBins - 1);  // lấy digit của phần tử dang xét
-        int begin_out = scans[digit * withScan + blockIdx.x];//s_scan[digit];//scans[digit * withScan + blockIdx.x];
-        int rank = threadIdx.x - startPos[digit] + begin_out;
-        out[rank] = src[threadIdx.x];
+    __syncthreads();
+    
+    if (threadIdx.x == 0)
+        startIndex[s_hist[0]] = 0;
+    else
+    {
+        if (s_hist[threadIdx.x] != s_hist[threadIdx.x - 1])
+            startIndex[s_hist[threadIdx.x]] = threadIdx.x;
+    }
+    __syncthreads();
+
+    if (id < n)
+    {
+        int preRank = threadIdx.x - startIndex[s_hist[threadIdx.x]];
+        int bin = ((s_in[threadIdx.x] >> bit) & (nBins - 1));
+        int scan = histScan[bin * gridDim.x + blockIdx.x];
+        int rank = scan + preRank;
+        out[rank] = s_in[threadIdx.x];
     }
 }
 
-void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
+
+void radixSortLv2_1(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 blockSize=dim3(512)) {
     dim3 gridSize((n - 1) / blockSize.x + 1);
     // int nBits = k;
     int nBins = 1 << k;
-
+    
     int nhist = gridSize.x * nBins;
     size_t nBytes = n * sizeof(uint32_t), hByte = nhist * sizeof(uint32_t);
     uint32_t *d_in, *d_hist, *d_scan, *d_blkSums = nullptr, *d_out;
+    uint32_t *d_hist_t;
 
     uint32_t * src = (uint32_t *)malloc(n * sizeof(uint32_t));
     uint32_t * originalSrc = src; // To free memory later
@@ -131,13 +154,16 @@ void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     CHECK(cudaMalloc(&d_in, nBytes));
     CHECK(cudaMalloc(&d_out, nBytes));
     CHECK(cudaMalloc(&d_hist, hByte));
+    CHECK(cudaMalloc(&d_hist_t, hByte));
     CHECK(cudaMalloc(&d_scan, hByte));
-
+   
     for (int bit = 0; bit < sizeof(uint32_t) * 8; bit += k) {
         CHECK(cudaMemcpy(d_in, src, nBytes, cudaMemcpyHostToDevice));
         CHECK(cudaMemset(d_hist, 0, hByte));
-        int smemHist = nBins * sizeof(uint32_t);
-        computeHistUseSMem<<<gridSize, blockSize, smemHist>>>(d_in, n, d_hist, nBins, bit);
+        computeHist<<<gridSize, blockSize>>>(d_in, n, d_hist, nBins, bit);
+        CHECK(cudaDeviceSynchronize());
+        CHECK(cudaGetLastError());
+        transpose_naive<<<gridSize.x, nBins>>>(d_hist_t, d_hist, nBins, gridSize.x);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
 
@@ -147,7 +173,7 @@ void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
         if (gridSizeScan.x > 1) {
             CHECK(cudaMalloc(&d_blkSums, sizeof(uint32_t) * gridSizeScan.x));
         }
-        scanBlkKernelCnt<<<gridSizeScan, blockSizeScan, smemScan>>>(d_hist, nhist, d_scan, d_blkSums);
+        scanBlkKernelCnt<<<gridSizeScan, blockSizeScan, smemScan>>>(d_hist_t, nhist, d_scan, d_blkSums);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
         if (gridSizeScan.x > 1) {
@@ -167,8 +193,8 @@ void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
             free(h_blkSums);
         }
 
-        int smemScatter = (2 * blockSize.x + nBins) * sizeof(uint32_t);
-        scatter<<<gridSize, blockSize, smemScatter>>>(d_in, d_scan, n, d_out, nBins, bit, gridSize.x);
+        int smemScatter = blockSize.x * 7 * sizeof(int);
+        Scatter<<<gridSize, blockSize, smemScatter>>>(d_in, n, k, bit, nBins, d_scan, d_out);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaGetLastError());
 
@@ -187,6 +213,30 @@ void radixSortLv2V0(const uint32_t * in, int n, uint32_t * out, int k = 2, dim3 
     CHECK(cudaFree(d_in));
     CHECK(cudaFree(d_out));
     CHECK(cudaFree(d_hist));
+    CHECK(cudaFree(d_hist_t));
     CHECK(cudaFree(d_scan));
     CHECK(cudaFree(d_blkSums));
+}
+
+float sort(const uint32_t * in, int n, uint32_t * out, int nBits, int blockSize, bool useDevice=false)
+{
+    GpuTimer timer; 
+    timer.Start();
+
+    if (useDevice == false)
+    {
+        printf("\nRadix sort by device\n");
+        radixSortLv2_1(in, n, out, nBits, blockSize);
+    }
+    else 
+    {
+        printf("\nRadix Sort by device(Thrust)\n");
+        sortByThrust(in, n, out);
+    	
+    }
+
+    timer.Stop();
+    float time = timer.Elapsed();
+    printf("Time: %.3f ms\n", timer.Elapsed());
+    return timer;
 }

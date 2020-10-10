@@ -1,18 +1,6 @@
 #include "../src/helper.cuh"
 #include "../src/scan.cuh"
 
-// __global__ void computeHistKernel(const uint32_t *in, int n, int *hist, int nBins, int bit) {
-//     // TODO
-//     // Each block computes its local hist using atomic on SMEM
-//     extern __shared__ int s_data[]; // Size: nBins elements
-//     for (int bin = threadIdx.x; bin < nBins; bin += blockDim.x)
-//         s_data[bin] = 0;
-//     __syncthreads();
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < n)
-//         atomicAdd(&s_data[(in[i] >> bit) & (nBins - 1)], 1);
-//     __syncthreads();
-// }
 
 __global__ void scanKernel(uint32_t * in, int n, uint32_t * out, uint32_t * blkSums, int nBins, int bit) {
     // TODO
@@ -42,12 +30,6 @@ __global__ void scanKernel(uint32_t * in, int n, uint32_t * out, uint32_t * blkS
     if (blkSums != nullptr && threadIdx.x == 0)
         blkSums[blockIdx.x] = s_data[blockDim.x - 1];
 }
-
-// __global__ void addPrevBlkSum(uint32_t * blkSumsScan, uint32_t * blkScans, int n) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x + blockDim.x;
-//     if (i < n)
-//         blkScans[i] += blkSumsScan[blockIdx.x];
-// }
 
 void coutingSort2(const uint32_t * in, int n, uint32_t * out) {
     GpuTimer timer;
@@ -283,7 +265,7 @@ void coutingSort3(const uint32_t * in, int n, uint32_t * out) {
 
 
 // Radix Sort
-void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int blockSize=1) {
+float sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int blockSize=1) {
     GpuTimer timer;
     timer.Start();
 
@@ -293,10 +275,12 @@ void sort(const uint32_t * in, int n,  uint32_t * out, bool useDevice=false, int
     }
     else {// use device
         printf("\nRadix Sort by device\n");
-        sortByThrust(in, n, out, blockSize);
+        sortByThrust(in, n, out);
     }
 
     timer.Stop();
-    printf("Time: %.3f ms\n", timer.Elapsed());
+    float time = timer.Elapsed();
+    printf("Time: %.3f ms\n", time);
+    return time;
 }
 

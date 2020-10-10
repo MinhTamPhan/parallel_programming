@@ -59,7 +59,7 @@ void sortByHost(const uint32_t * in, int n, uint32_t * out) {
 }
 
 // Radix Sort
-void sort(const uint32_t * in, int n,  uint32_t * out,  bool useDevice=false, int blockSize=1) {
+float sort(const uint32_t * in, int n,  uint32_t * out,  bool useDevice=false, int blockSize=1) {
     GpuTimer timer; 
     timer.Start();
 
@@ -69,9 +69,11 @@ void sort(const uint32_t * in, int n,  uint32_t * out,  bool useDevice=false, in
     }
     else  { // use device
         printf("\nRadix Sort by device(Thrust)\n");
-        sortByThrust(in, n, out, blockSize);
+        sortByThrust(in, n, out);
     }
 
     timer.Stop();
-    printf("Time: %.3f ms\n", timer.Elapsed());
+    float time = timer.Elapsed();
+    printf("Time: %.3f ms\n",time);
+    return time;
 }

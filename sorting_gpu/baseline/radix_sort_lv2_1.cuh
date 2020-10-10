@@ -74,7 +74,7 @@ __global__ void Scatter(uint32_t * in, int n, int nBits, int bit, int nBins, uin
     if (id < n)
     {
         s_in[threadIdx.x] = in[id];
-        s_hist[threadIdx.x] = (s_in[threadIdx.x] >> bit) & (nBins - 1); // get bit, lấy giá trị di đang xét
+        s_hist[threadIdx.x] = (s_in[threadIdx.x] >> bit) & (nBins - 1); // lấy giá trị digit đang xét
     }
     else 
         s_hist[threadIdx.x] = nBins - 1;
@@ -115,7 +115,7 @@ __global__ void Scatter(uint32_t * in, int n, int nBits, int bit, int nBins, uin
         s_in[threadIdx.x] = dst_ori[threadIdx.x];
     }
     __syncthreads();
-    // TODO: B2
+    
     if (threadIdx.x == 0)
         startIndex[s_hist[0]] = 0;
     else
@@ -124,7 +124,7 @@ __global__ void Scatter(uint32_t * in, int n, int nBits, int bit, int nBins, uin
             startIndex[s_hist[threadIdx.x]] = threadIdx.x;
     }
     __syncthreads();
-    // TODO: B3 và B4
+
     if (id < n)
     {
         int preRank = threadIdx.x - startIndex[s_hist[threadIdx.x]];
