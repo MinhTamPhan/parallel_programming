@@ -69,7 +69,7 @@ int main(int argc, char ** argv) {
     int n = (1 << 24) + 1;
     // n = 100;
 	int k = 8;
-	dim3 blockSize = dim3(49);
+	dim3 blockSize = dim3(512);
 	if (argc >= 2){
 		blockSize = atoi(argv[1]);
     }
@@ -102,7 +102,7 @@ int main(int argc, char ** argv) {
 		avgThrus += time / nLoop;
 		checkCorrectness(outImp, outThrus, n);
         loop++;
-        break;
+        // break;
 	}
     printf("================================ avg time after %d run================================ \n", nLoop);
 	printf("avgTimeImp: %f ms\n", avgTimeImp);
